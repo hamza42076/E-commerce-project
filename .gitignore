@@ -46,3 +46,6 @@ next-env.d.ts
 # Uploaded product images (user content, not source)
 /public/uploads/*
 !/public/uploads/.gitkeep
+
+# Email preview output from scripts/test-email.mts
+email-preview-*.html

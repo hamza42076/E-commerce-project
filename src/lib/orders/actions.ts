@@ -1,6 +1,9 @@
 "use server";
 
+import { after } from "next/server";
 import { checkoutSchema } from "@/lib/validation";
+import { sendMail } from "@/lib/email/mailer";
+import { newOrderOwnerEmail, orderConfirmationEmail } from "@/lib/email/templates";
 import { getProductsByIds } from "@/lib/db/products";
 import { createOrder } from "@/lib/db/orders";
 import { deliveryFeeFor } from "@/lib/shipping";
@@ -83,6 +86,39 @@ export async function placeOrderAction(
     delivery,
     total: subtotal + delivery,
     userId: session?.userId,
+  });
+
+  // Sent after the response, so a slow or unreachable SMTP server never holds
+  // up the confirmation screen. sendMail swallows its own failures: an order
+  // that is placed stays placed even if neither email goes out, and one
+  // failing does not stop the other.
+  after(async () => {
+    const confirmation = orderConfirmationEmail(order);
+    const sends = [
+      sendMail({
+        to: order.email,
+        subject: confirmation.subject,
+        html: confirmation.html,
+        text: confirmation.text,
+      }),
+    ];
+
+    const owner = process.env.OWNER_EMAIL?.trim();
+    if (owner) {
+      const notice = newOrderOwnerEmail(order);
+      sends.push(
+        sendMail({
+          to: owner,
+          subject: notice.subject,
+          html: notice.html,
+          text: notice.text,
+        }),
+      );
+    } else {
+      console.warn("[email] OWNER_EMAIL is not set — no new-order notification sent.");
+    }
+
+    await Promise.all(sends);
   });
 
   return { ok: true, reference: order.reference, total: order.total };

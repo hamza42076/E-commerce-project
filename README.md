@@ -152,6 +152,45 @@ The root layout reads the session cookie to render the header, which makes every
 route render per request. Prices, stock and the signed-in state are therefore
 always current, at the cost of static generation.
 
+## Before going live
+
+The app is a working demo, not a shop that is ready for customers. `npm run build`
+fails on purpose until the first two boxes are ticked.
+
+**Environment — done**
+
+- [x] `MONGODB_URI` — pointed at the `smartshop` database on the existing Atlas
+      cluster. Products, users and orders persist across restarts, and
+      `npm run build` succeeds.
+- [x] `AUTH_SECRET` — generated and set in `.env.local`.
+- [ ] Rotate the Atlas password, or give this project its own database user.
+      The connection string was shared in chat, so treat it as exposed.
+
+**Security**
+
+- [ ] Delete the demo accounts (`src/lib/db/demo-accounts.ts`) and the credentials
+      box on the sign-in page, then create a real admin with a strong password.
+      As it stands those passwords are printed on the login page.
+
+**Content that is not real**
+
+- [ ] The 14 products in `src/lib/db/seed-products.ts` are invented — names,
+      prices and descriptions. Replace them with the real catalogue.
+- [ ] Every product carries an invented `rating` and `reviewCount`. Showing
+      made-up reviews to customers is deceptive and is regulated in most
+      markets. Either build real reviews or drop both fields from the UI.
+- [ ] The five sample orders in `src/lib/db/orders.ts` only appear in the
+      no-database fallback. Now that MongoDB is connected the orders list starts
+      empty and fills with real ones, so this is no longer visible — but the
+      sample data is still in the file.
+
+**Hosting**
+
+- [ ] Image uploads write to `public/uploads/`, so a serverless host such as
+      Vercel will not keep them. Use a VPS, or move `src/lib/admin/upload.ts`
+      to object storage.
+- [ ] Payment is cash on delivery only.
+
 ## Not built yet
 
 - Online payment — orders are cash on delivery.
