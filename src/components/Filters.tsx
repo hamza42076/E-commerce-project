@@ -34,7 +34,12 @@ export function Filters({ categories }: { categories: Category[] }) {
   function buildUrl(updates: Record<string, string | null>) {
     const params = new URLSearchParams(searchParams.toString());
     for (const [key, value] of Object.entries(updates)) {
-      if (value === null || value === "" || value === "all" || value === "featured") {
+      if (
+        value === null ||
+        value === "" ||
+        value === "all" ||
+        value === "featured"
+      ) {
         params.delete(key);
       } else {
         params.set(key, value);
@@ -56,7 +61,8 @@ export function Filters({ categories }: { categories: Category[] }) {
   }, [search, urlSearch]);
 
   const allCategories = [{ slug: "all", name: "All" }, ...categories];
-  const hasFilters = activeCategory !== "all" || activeSort !== "featured" || urlSearch !== "";
+  const hasFilters =
+    activeCategory !== "all" || activeSort !== "featured" || urlSearch !== "";
 
   return (
     <div className="flex flex-col gap-4 rounded-2xl border border-line bg-surface-raised p-4">
@@ -68,8 +74,19 @@ export function Filters({ categories }: { categories: Category[] }) {
             aria-hidden="true"
             className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-subtle"
           >
-            <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.8" />
-            <path d="M16 16l4.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            <circle
+              cx="11"
+              cy="11"
+              r="6.5"
+              stroke="currentColor"
+              strokeWidth="1.8"
+            />
+            <path
+              d="M16 16l4.5 4.5"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+            />
           </svg>
           <input
             type="search"
@@ -86,7 +103,9 @@ export function Filters({ categories }: { categories: Category[] }) {
           <select
             value={activeSort}
             onChange={(event) =>
-              router.replace(buildUrl({ sort: event.target.value }), { scroll: false })
+              router.replace(buildUrl({ sort: event.target.value }), {
+                scroll: false,
+              })
             }
             className="rounded-xl border border-line bg-surface px-3 py-2.5 text-sm text-ink outline-none transition focus:border-brand-500"
           >
@@ -100,26 +119,31 @@ export function Filters({ categories }: { categories: Category[] }) {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        {allCategories.map((category) => {
-          const active = category.slug === activeCategory;
-          return (
-            <button
-              key={category.slug}
-              type="button"
-              aria-pressed={active}
-              onClick={() =>
-                router.replace(buildUrl({ category: category.slug }), { scroll: false })
-              }
-              className={`rounded-full px-3.5 py-1.5 text-sm transition active:scale-95 ${
-                active
-                  ? "bg-brand-600 text-white shadow-sm shadow-brand-600/25"
-                  : "border border-line text-muted hover:border-brand-300 hover:text-brand-600"
-              }`}
-            >
-              {category.name}
-            </button>
-          );
-        })}
+        {/* With a single category, "All" and that category are the same list,
+            so the pills are noise. They come back with a second category. */}
+        {categories.length > 1 &&
+          allCategories.map((category) => {
+            const active = category.slug === activeCategory;
+            return (
+              <button
+                key={category.slug}
+                type="button"
+                aria-pressed={active}
+                onClick={() =>
+                  router.replace(buildUrl({ category: category.slug }), {
+                    scroll: false,
+                  })
+                }
+                className={`rounded-full px-3.5 py-1.5 text-sm transition active:scale-95 ${
+                  active
+                    ? "bg-brand-600 text-white shadow-sm shadow-brand-600/25"
+                    : "border border-line text-muted hover:border-brand-300 hover:text-brand-600"
+                }`}
+              >
+                {category.name}
+              </button>
+            );
+          })}
 
         {hasFilters && (
           <button

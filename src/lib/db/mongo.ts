@@ -1,5 +1,5 @@
 import { MongoClient, type Collection, type Db } from "mongodb";
-import type { OrderItem, OrderStatus, UserRole } from "@/types";
+import type { OrderItem, OrderStatus, ProductVariant, UserRole } from "@/types";
 
 /**
  * A single MongoClient is reused for the whole process. In development Next.js
@@ -34,20 +34,36 @@ export async function getDb(): Promise<Db> {
   return client.db(process.env.MONGODB_DB || DEFAULT_DB_NAME);
 }
 
-/** Shape of a document in the `products` collection. `_id` is the product id. */
+/**
+ * Shape of a document in the `products` collection. `_id` is the product id.
+ *
+ * Mirrors `Product` from `@/types` exactly, minus the renamed id. Fields added
+ * when variants arrived are optional here because documents written before then
+ * do not have them; `toProduct` fills the gaps. Nothing else in the app sees a
+ * product without them.
+ */
 export type ProductDoc = {
   _id: string;
   slug: string;
+  sku?: string;
   name: string;
   description: string;
   price: number;
   compareAtPrice?: number;
   category: string;
+  material?: string;
+  strapType?: string;
+  badge?: string | null;
+  variants?: ProductVariant[];
+  /** Pre-variant image. Kept so older products keep rendering. */
   image: string;
+  /** Pre-variant stock. Kept so older products keep selling. */
+  stock: number;
   rating: number;
   reviewCount: number;
-  stock: number;
   featured?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type CategoryDoc = {
@@ -71,6 +87,17 @@ export type UserDoc = {
   createdAt: string;
 };
 
+/**
+ * An item as stored. Colour fields are optional because orders written before
+ * variants existed do not have them; `fromDoc` in `orders.ts` fills them in so
+ * the rest of the app only ever sees a complete `OrderItem`.
+ */
+export type StoredOrderItem = Omit<OrderItem, "color" | "colorCode" | "image"> & {
+  color?: string;
+  colorCode?: string;
+  image?: string;
+};
+
 /** `_id` is the order id. */
 export type OrderDoc = {
   _id: string;
@@ -81,7 +108,7 @@ export type OrderDoc = {
   address: string;
   city: string;
   notes?: string;
-  items: OrderItem[];
+  items: StoredOrderItem[];
   subtotal: number;
   delivery: number;
   total: number;

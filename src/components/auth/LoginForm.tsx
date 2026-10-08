@@ -14,6 +14,15 @@ export function LoginForm() {
   const searchParams = useSearchParams();
   const { showToast } = useUI();
 
+  // Only same-site paths. Without this, /login?next=https://evil.com would
+  // hand the visitor straight to someone else's site after a real sign-in.
+  const requested = searchParams.get("next");
+  const next =
+    requested && requested.startsWith("/") && !requested.startsWith("//")
+      ? requested
+      : null;
+  const signupHref = next ? `/signup?next=${encodeURIComponent(next)}` : "/signup";
+
   const {
     register,
     handleSubmit,
@@ -35,7 +44,6 @@ export function LoginForm() {
     }
 
     showToast("Signed in", "Welcome back");
-    const next = searchParams.get("next");
     router.push(next ?? (result.role === "admin" ? "/admin" : "/"));
     router.refresh();
   }
@@ -76,7 +84,7 @@ export function LoginForm() {
 
       <p className="text-center text-sm text-muted">
         No account yet?{" "}
-        <Link href="/signup" className="font-medium text-brand-600 hover:underline">
+        <Link href={signupHref} className="font-medium text-brand-600 hover:underline">
           Create one
         </Link>
       </p>

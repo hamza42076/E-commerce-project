@@ -24,8 +24,8 @@ const SAMPLE_ORDERS: Order[] = [
     address: "House 42, Street 7, Gulberg III",
     city: "Lahore",
     items: [
-      { productId: "p-001", name: "Wireless Noise-Cancelling Headphones", price: 24999, quantity: 1 },
-      { productId: "p-003", name: "65W USB-C Fast Charger", price: 4299, quantity: 1 },
+      { productId: "p-001", name: "Wireless Noise-Cancelling Headphones", price: 24999, quantity: 1, color: "", colorCode: "", image: "" },
+      { productId: "p-003", name: "65W USB-C Fast Charger", price: 4299, quantity: 1, color: "", colorCode: "", image: "" },
     ],
     subtotal: 29298,
     delivery: 0,
@@ -41,7 +41,7 @@ const SAMPLE_ORDERS: Order[] = [
     phone: "03211234567",
     address: "Flat 5B, Sea Breeze Apartments, Clifton Block 2",
     city: "Karachi",
-    items: [{ productId: "p-005", name: "Oversized Cotton Hoodie", price: 4999, quantity: 2 }],
+    items: [{ productId: "p-005", name: "Oversized Cotton Hoodie", price: 4999, quantity: 2, color: "", colorCode: "", image: "" }],
     subtotal: 9998,
     delivery: 0,
     total: 9998,
@@ -57,8 +57,8 @@ const SAMPLE_ORDERS: Order[] = [
     address: "House 12, Street 44, F-11/3",
     city: "Islamabad",
     items: [
-      { productId: "p-012", name: "Vitamin C Brightening Serum", price: 3299, quantity: 1 },
-      { productId: "p-013", name: "Hydrating Face Moisturiser", price: 2599, quantity: 1 },
+      { productId: "p-012", name: "Vitamin C Brightening Serum", price: 3299, quantity: 1, color: "", colorCode: "", image: "" },
+      { productId: "p-013", name: "Hydrating Face Moisturiser", price: 2599, quantity: 1, color: "", colorCode: "", image: "" },
     ],
     subtotal: 5898,
     delivery: 0,
@@ -74,7 +74,7 @@ const SAMPLE_ORDERS: Order[] = [
     phone: "03451234567",
     address: "Shop 8, Saddar Bazaar",
     city: "Rawalpindi",
-    items: [{ productId: "p-011", name: "Aromatherapy Oil Diffuser", price: 3799, quantity: 1 }],
+    items: [{ productId: "p-011", name: "Aromatherapy Oil Diffuser", price: 3799, quantity: 1, color: "", colorCode: "", image: "" }],
     subtotal: 3799,
     delivery: 250,
     total: 4049,
@@ -89,7 +89,7 @@ const SAMPLE_ORDERS: Order[] = [
     phone: "03091234567",
     address: "House 90, Phase 5, DHA",
     city: "Lahore",
-    items: [{ productId: "p-010", name: "Washed Linen Bedding Set", price: 15999, quantity: 1 }],
+    items: [{ productId: "p-010", name: "Washed Linen Bedding Set", price: 15999, quantity: 1, color: "", colorCode: "", image: "" }],
     subtotal: 15999,
     delivery: 0,
     total: 15999,
@@ -107,7 +107,18 @@ function memoryStore(): Order[] {
 
 function fromDoc(doc: OrderDoc): Order {
   const { _id, ...rest } = doc;
-  return { id: _id, ...rest };
+  return {
+    id: _id,
+    ...rest,
+    // Orders written before colours existed have items without them. Filling
+    // the gaps here means nothing downstream has to check.
+    items: rest.items.map((item) => ({
+      ...item,
+      color: item.color ?? "",
+      colorCode: item.colorCode ?? "",
+      image: item.image ?? "",
+    })),
+  };
 }
 
 function byNewest(a: Order, b: Order): number {
@@ -167,6 +178,19 @@ export async function getOrders(options: { status?: OrderStatus } = {}): Promise
   const collection = await ordersCollection();
   const filter = options.status ? { status: options.status } : {};
   const docs = await collection.find(filter).sort({ createdAt: -1 }).toArray();
+  return docs.map(fromDoc);
+}
+
+/** Orders placed by one account, newest first. */
+export async function getOrdersByUser(userId: string): Promise<Order[]> {
+  if (shouldUseSeedData()) {
+    return memoryStore()
+      .filter((order) => order.userId === userId)
+      .sort(byNewest);
+  }
+
+  const collection = await ordersCollection();
+  const docs = await collection.find({ userId }).sort({ createdAt: -1 }).toArray();
   return docs.map(fromDoc);
 }
 

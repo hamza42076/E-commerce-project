@@ -1,3 +1,4 @@
+import { primaryImage } from "@/lib/products/variants";
 import type { Product } from "@/types";
 
 /**
@@ -20,8 +21,19 @@ const strokeProps = {
   strokeLinejoin: "round" as const,
 };
 
-// Four looks built from the two brand colours only, varied by shade and direction.
+// Built from the two brand colours only, varied by shade and direction. Keys
+// are category slugs; anything without an entry falls back below, so adding a
+// category does not break the tiles.
 const ART: Record<string, Art> = {
+  "ladies-bags": {
+    panel: "from-accent-400/20 via-accent-300/10 to-brand-500/20 text-accent-700 dark:text-accent-300",
+    icon: (
+      <g {...strokeProps}>
+        <path d="M4.5 8.5h15l-1.2 10.2a1.8 1.8 0 01-1.8 1.6H7.5a1.8 1.8 0 01-1.8-1.6z" />
+        <path d="M8.5 8.5V6.8a3.5 3.5 0 017 0v1.7" />
+      </g>
+    ),
+  },
   electronics: {
     panel: "from-brand-500/20 via-brand-400/10 to-brand-700/25 text-brand-700 dark:text-brand-300",
     icon: (
@@ -73,19 +85,31 @@ const FALLBACK: Art = {
 
 export function ProductImage({
   product,
+  src,
+  alt,
   className = "",
   iconClass = "h-1/3 w-1/3",
 }: {
   product: Product;
+  /**
+   * Which image to draw. Defaults to the product's primary variant image, but
+   * the detail page passes the selected colour's image so the picture changes
+   * with the swatch.
+   */
+  src?: string;
+  alt?: string;
   className?: string;
   iconClass?: string;
 }) {
-  if (product.image) {
+  const resolved = src ?? primaryImage(product);
+  const label = alt ?? product.name;
+
+  if (resolved) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
-        src={product.image}
-        alt={product.name}
+        src={resolved}
+        alt={label}
         className={`h-full w-full object-cover ${className}`}
       />
     );
@@ -96,7 +120,7 @@ export function ProductImage({
   return (
     <div
       role="img"
-      aria-label={product.name}
+      aria-label={label}
       className={`relative flex h-full w-full items-center justify-center bg-gradient-to-br ${art.panel} ${className}`}
     >
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.45),transparent_60%)] dark:bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.08),transparent_60%)]" />

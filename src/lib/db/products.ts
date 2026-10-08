@@ -1,19 +1,48 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import type { Filter, Sort } from "mongodb";
-import type { Category, Product, ProductQuery } from "@/types";
+import type { Category, Product, ProductQuery, ProductVariant } from "@/types";
 import { categoriesCollection, productsCollection, type ProductDoc } from "./mongo";
 import { shouldUseSeedData } from "./fallback";
 import { seedCategories, seedProducts } from "./seed-products";
 
 /**
- * Data access layer. Every product read in the app goes through this file.
- * See `fallback.ts` for what happens without a connection string.
+ * Data access layer. Every product read and write in the app goes through this
+ * file. See `fallback.ts` for what happens without a connection string.
  */
 
+/** What the admin form and the API both hand in to create or update a product. */
+export type ProductInput = {
+  name: string;
+  description: string;
+  category: string;
+  sku: string;
+  price: number;
+  compareAtPrice?: number;
+  material?: string;
+  strapType?: string;
+  badge?: string | null;
+  featured: boolean;
+  variants: ProductVariant[];
+};
+
+/**
+ * Fills in the fields added when variants arrived, so the rest of the app never
+ * has to deal with a half-shaped product. Documents written before then keep
+ * their `image` and `stock`; `variants` stays empty and the helpers in
+ * `lib/products/variants.ts` fall back to those two.
+ */
 function toProduct(doc: ProductDoc): Product {
   const { _id, ...rest } = doc;
-  return { id: _id, ...rest };
+  return {
+    id: _id,
+    ...rest,
+    sku: doc.sku ?? "",
+    variants: doc.variants ?? [],
+    badge: doc.badge ?? null,
+    material: doc.material ?? "",
+    strapType: doc.strapType ?? "",
+  };
 }
 
 /** Escape user input before putting it in a $regex. */
@@ -31,7 +60,14 @@ function buildFilter(query: ProductQuery): Filter<ProductDoc> {
   const term = query.search?.trim();
   if (term) {
     const pattern = new RegExp(escapeRegex(term), "i");
-    filter.$or = [{ name: pattern }, { description: pattern }, { category: pattern }];
+    filter.$or = [
+      { name: pattern },
+      { description: pattern },
+      { category: pattern },
+      { sku: pattern },
+      // So "black bag" finds a bag that comes in black.
+      { "variants.color": pattern },
+    ];
   }
 
   return filter;
@@ -52,6 +88,17 @@ function buildSort(sort: ProductQuery["sort"]): Sort {
 
 // --- Fallback helpers, mirroring the queries above against the seed array ----
 
+function matchesSearch(product: Product, term: string): boolean {
+  const needle = term.toLowerCase();
+  return (
+    product.name.toLowerCase().includes(needle) ||
+    product.description.toLowerCase().includes(needle) ||
+    product.category.toLowerCase().includes(needle) ||
+    product.sku.toLowerCase().includes(needle) ||
+    product.variants.some((variant) => variant.color.toLowerCase().includes(needle))
+  );
+}
+
 function fallbackProducts(query: ProductQuery = {}): Product[] {
   const { search, category, sort = "featured" } = query;
   let results = seedProducts;
@@ -60,13 +107,7 @@ function fallbackProducts(query: ProductQuery = {}): Product[] {
     results = results.filter((p) => p.category === category);
   }
   if (search?.trim()) {
-    const term = search.trim().toLowerCase();
-    results = results.filter(
-      (p) =>
-        p.name.toLowerCase().includes(term) ||
-        p.description.toLowerCase().includes(term) ||
-        p.category.toLowerCase().includes(term),
-    );
+    results = results.filter((p) => matchesSearch(p, search.trim()));
   }
 
   const sorted = [...results];
@@ -89,7 +130,7 @@ function fallbackProducts(query: ProductQuery = {}): Product[] {
   return sorted;
 }
 
-// --- Public API --------------------------------------------------------------
+// --- Reads ------------------------------------------------------------------
 
 export async function getCategories(): Promise<Category[]> {
   if (shouldUseSeedData()) return seedCategories;
@@ -103,10 +144,7 @@ export async function getProducts(query: ProductQuery = {}): Promise<Product[]> 
   if (shouldUseSeedData()) return fallbackProducts(query);
 
   const collection = await productsCollection();
-  const docs = await collection
-    .find(buildFilter(query))
-    .sort(buildSort(query.sort))
-    .toArray();
+  const docs = await collection.find(buildFilter(query)).sort(buildSort(query.sort)).toArray();
   return docs.map(toProduct);
 }
 
@@ -123,6 +161,14 @@ export async function getProductBySlug(slug: string): Promise<Product | null> {
 
   const collection = await productsCollection();
   const doc = await collection.findOne({ slug });
+  return doc ? toProduct(doc) : null;
+}
+
+export async function getProductById(id: string): Promise<Product | null> {
+  if (shouldUseSeedData()) return seedProducts.find((p) => p.id === id) ?? null;
+
+  const collection = await productsCollection();
+  const doc = await collection.findOne({ _id: id });
   return doc ? toProduct(doc) : null;
 }
 
@@ -162,31 +208,156 @@ export async function getAllProducts(): Promise<Product[]> {
   return docs.map(toProduct);
 }
 
+export async function countProducts(): Promise<number> {
+  if (shouldUseSeedData()) return seedProducts.length;
+  const collection = await productsCollection();
+  return collection.countDocuments();
+}
+
 // --- Admin writes ------------------------------------------------------------
 
-export type NewProduct = Omit<Product, "id" | "rating" | "reviewCount">;
-
-/** Returns null when the slug is already taken. */
-export async function createProduct(input: NewProduct): Promise<Product | null> {
-  const product: Product = {
-    id: `p-${randomUUID().slice(0, 8)}`,
-    rating: 0,
-    reviewCount: 0,
-    ...input,
-  };
+/** Case-insensitive, so "ss-bag-001" cannot sit beside "SS-BAG-001". */
+export async function skuTaken(sku: string, exceptId?: string): Promise<boolean> {
+  const needle = sku.trim().toLowerCase();
 
   if (shouldUseSeedData()) {
-    if (seedProducts.some((existing) => existing.slug === product.slug)) return null;
-    seedProducts.unshift(product);
-    return product;
+    return seedProducts.some(
+      (p) => p.id !== exceptId && p.sku.trim().toLowerCase() === needle,
+    );
   }
 
   const collection = await productsCollection();
-  if (await collection.findOne({ slug: product.slug })) return null;
+  const filter: Filter<ProductDoc> = {
+    sku: new RegExp(`^${escapeRegex(sku.trim())}$`, "i"),
+  };
+  if (exceptId) filter._id = { $ne: exceptId };
+  return (await collection.countDocuments(filter, { limit: 1 })) > 0;
+}
 
-  const { id, ...rest } = product;
-  await collection.insertOne({ _id: id, ...rest });
-  return product;
+/** Appends -2, -3 … rather than refusing, so two similar names can coexist. */
+async function uniqueSlug(base: string, exceptId?: string): Promise<string> {
+  const taken = async (candidate: string) => {
+    if (shouldUseSeedData()) {
+      return seedProducts.some((p) => p.slug === candidate && p.id !== exceptId);
+    }
+    const collection = await productsCollection();
+    const filter: Filter<ProductDoc> = { slug: candidate };
+    if (exceptId) filter._id = { $ne: exceptId };
+    return (await collection.countDocuments(filter, { limit: 1 })) > 0;
+  };
+
+  if (!(await taken(base))) return base;
+  for (let suffix = 2; suffix < 100; suffix += 1) {
+    const candidate = `${base}-${suffix}`;
+    if (!(await taken(candidate))) return candidate;
+  }
+  return `${base}-${randomUUID().slice(0, 6)}`;
+}
+
+/**
+ * Derived from the variants so the two can never disagree. Kept on the document
+ * because older products rely on these two fields and the listing queries read
+ * them without knowing about variants.
+ */
+function legacyMirror(variants: ProductVariant[]): { image: string; stock: number } {
+  const first = variants.find((v) => v.stock > 0) ?? variants[0];
+  return {
+    image: first?.image ?? "",
+    stock: variants.reduce((sum, v) => sum + v.stock, 0),
+  };
+}
+
+/**
+ * An explicit field list rather than spreading the product, so a field added to
+ * `Product` for the UI's benefit has to be opted into storage deliberately.
+ */
+function toDocFields(product: Product): Omit<ProductDoc, "_id"> {
+  return {
+    slug: product.slug,
+    sku: product.sku,
+    name: product.name,
+    description: product.description,
+    price: product.price,
+    compareAtPrice: product.compareAtPrice,
+    category: product.category,
+    material: product.material,
+    strapType: product.strapType,
+    badge: product.badge,
+    variants: product.variants,
+    image: product.image,
+    stock: product.stock,
+    rating: product.rating,
+    reviewCount: product.reviewCount,
+    featured: product.featured,
+    createdAt: product.createdAt,
+    updatedAt: product.updatedAt,
+  };
+}
+
+export type WriteResult =
+  | { ok: true; product: Product }
+  | { ok: false; reason: "sku-taken" | "not-found" };
+
+export async function createProduct(
+  input: ProductInput,
+  baseSlug: string,
+): Promise<WriteResult> {
+  if (await skuTaken(input.sku)) return { ok: false, reason: "sku-taken" };
+
+  const now = new Date().toISOString();
+  const product: Product = {
+    id: `p-${randomUUID().slice(0, 8)}`,
+    slug: await uniqueSlug(baseSlug),
+    rating: 0,
+    reviewCount: 0,
+    ...input,
+    ...legacyMirror(input.variants),
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  if (shouldUseSeedData()) {
+    seedProducts.unshift(product);
+    return { ok: true, product };
+  }
+
+  const collection = await productsCollection();
+  await collection.insertOne({ _id: product.id, ...toDocFields(product) });
+  return { ok: true, product };
+}
+
+export async function updateProduct(
+  id: string,
+  input: ProductInput,
+  baseSlug: string,
+): Promise<WriteResult> {
+  const existing = await getProductById(id);
+  if (!existing) return { ok: false, reason: "not-found" };
+  if (await skuTaken(input.sku, id)) return { ok: false, reason: "sku-taken" };
+
+  // The slug only moves if the name changed, so existing links keep working
+  // through ordinary edits like a price change.
+  const slug =
+    baseSlug === existing.slug ? existing.slug : await uniqueSlug(baseSlug, id);
+
+  const product: Product = {
+    ...existing,
+    ...input,
+    ...legacyMirror(input.variants),
+    slug,
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (shouldUseSeedData()) {
+    const index = seedProducts.findIndex((p) => p.id === id);
+    if (index === -1) return { ok: false, reason: "not-found" };
+    seedProducts[index] = product;
+    return { ok: true, product };
+  }
+
+  const collection = await productsCollection();
+  await collection.updateOne({ _id: id }, { $set: toDocFields(product) });
+  return { ok: true, product };
 }
 
 export async function deleteProduct(id: string): Promise<boolean> {
@@ -202,8 +373,89 @@ export async function deleteProduct(id: string): Promise<boolean> {
   return result.deletedCount > 0;
 }
 
-export async function countProducts(): Promise<number> {
-  if (shouldUseSeedData()) return seedProducts.length;
+/**
+ * Takes stock off one colour, and only if that colour still has enough.
+ *
+ * The check and the decrement are a single conditional update, so two orders
+ * landing at the same moment cannot both pass a "do we have enough?" test and
+ * oversell. A `false` return means someone else got there first.
+ */
+export async function decrementVariantStock(
+  productId: string,
+  color: string,
+  quantity: number,
+): Promise<boolean> {
+  if (shouldUseSeedData()) {
+    const product = seedProducts.find((p) => p.id === productId);
+    if (!product) return false;
+
+    if (product.variants.length === 0) {
+      if (product.stock < quantity) return false;
+      product.stock -= quantity;
+      return true;
+    }
+
+    const variant = product.variants.find((v) => v.color === color);
+    if (!variant || variant.stock < quantity) return false;
+    variant.stock -= quantity;
+    product.stock = product.variants.reduce((sum, v) => sum + v.stock, 0);
+    return true;
+  }
+
   const collection = await productsCollection();
-  return collection.countDocuments();
+
+  // A product with no variants keeps its stock at the top level.
+  if (color === "") {
+    const result = await collection.updateOne(
+      { _id: productId, stock: { $gte: quantity } },
+      { $inc: { stock: -quantity } },
+    );
+    return result.modifiedCount > 0;
+  }
+
+  const result = await collection.updateOne(
+    {
+      _id: productId,
+      variants: { $elemMatch: { color, stock: { $gte: quantity } } },
+    },
+    { $inc: { "variants.$.stock": -quantity, stock: -quantity } },
+  );
+  return result.modifiedCount > 0;
+}
+
+/**
+ * Puts stock back. Used to undo reservations when a later line in the same
+ * order turns out to be unavailable, so a half-reserved order does not leave
+ * stock stranded.
+ */
+export async function restoreVariantStock(
+  productId: string,
+  color: string,
+  quantity: number,
+): Promise<void> {
+  if (shouldUseSeedData()) {
+    const product = seedProducts.find((p) => p.id === productId);
+    if (!product) return;
+
+    if (product.variants.length === 0) {
+      product.stock += quantity;
+      return;
+    }
+    const variant = product.variants.find((v) => v.color === color);
+    if (variant) variant.stock += quantity;
+    product.stock = product.variants.reduce((sum, v) => sum + v.stock, 0);
+    return;
+  }
+
+  const collection = await productsCollection();
+
+  if (color === "") {
+    await collection.updateOne({ _id: productId }, { $inc: { stock: quantity } });
+    return;
+  }
+
+  await collection.updateOne(
+    { _id: productId, "variants.color": color },
+    { $inc: { "variants.$.stock": quantity, stock: quantity } },
+  );
 }

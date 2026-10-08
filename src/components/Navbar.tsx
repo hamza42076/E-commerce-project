@@ -5,18 +5,17 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useCart } from "@/context/CartContext";
 import { useUI } from "@/context/UIContext";
-import { UserMenu, type SessionSummary } from "./UserMenu";
+import { UserMenu } from "./UserMenu";
 
+// Category links are not listed here: with one category there is nothing to
+// navigate between, and the shop page's filter pills are built from the
+// database, so they appear on their own once a second category exists.
 const LINKS = [
   { href: "/", label: "Home" },
   { href: "/products", label: "Shop" },
-  { href: "/products?category=electronics", label: "Electronics" },
-  { href: "/products?category=fashion", label: "Fashion" },
-  { href: "/products?category=home", label: "Home" },
-  { href: "/products?category=beauty", label: "Beauty" },
 ];
 
-export function Navbar({ session }: { session: SessionSummary }) {
+export function Navbar() {
   const { itemCount, ready } = useCart();
   const { openCart } = useUI();
   const pathname = usePathname();
@@ -79,7 +78,7 @@ export function Navbar({ session }: { session: SessionSummary }) {
           </Link>
 
           <div className="ml-4 hidden items-center gap-5 text-sm md:flex">
-            {LINKS.slice(0, 2).map((link) => {
+            {LINKS.map((link) => {
               const active =
                 link.href === "/" ? pathname === "/" : pathname.startsWith("/products");
               return (
@@ -124,7 +123,7 @@ export function Navbar({ session }: { session: SessionSummary }) {
             <span className="hidden sm:inline">Cart</span>
           </button>
 
-          <UserMenu session={session} />
+          <UserMenu />
         </nav>
 
         {menuOpen && (

@@ -97,9 +97,23 @@ export default async function AdminOrdersPage() {
                 </h3>
                 <ul className="mt-2 space-y-1.5 text-sm">
                   {order.items.map((item) => (
-                    <li key={item.productId} className="flex justify-between gap-3">
+                    <li
+                      key={`${item.productId}::${item.color}`}
+                      className="flex justify-between gap-3"
+                    >
                       <span className="min-w-0">
                         <span className="line-clamp-1">{item.name}</span>
+                        {/* The colour the customer actually picked, as it was
+                            when they ordered. */}
+                        {item.color && (
+                          <span className="mt-0.5 flex items-center gap-1.5 text-xs">
+                            <span
+                              className="h-2.5 w-2.5 rounded-full border border-black/15 dark:border-white/20"
+                              style={{ backgroundColor: item.colorCode || "#d4d4d8" }}
+                            />
+                            <span className="font-medium">{item.color}</span>
+                          </span>
+                        )}
                         <span className="text-muted">
                           {formatPrice(item.price)} x {item.quantity}
                         </span>

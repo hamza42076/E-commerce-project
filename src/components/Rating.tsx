@@ -7,6 +7,10 @@ export function Rating({
   reviewCount?: number;
   className?: string;
 }) {
+  // Nothing to show until a real customer has rated it. Drawing empty stars, or
+  // worse an invented score, would be telling people something untrue.
+  if (reviewCount === 0) return null;
+
   const filled = Math.round(value);
 
   return (

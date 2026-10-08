@@ -9,8 +9,9 @@ import { signupSchema, type SignupValues } from "@/lib/validation";
 import { signupAction } from "@/lib/auth/actions";
 import { useUI } from "@/context/UIContext";
 
-export function SignupForm() {
+export function SignupForm({ next }: { next?: string }) {
   const router = useRouter();
+  const loginHref = next ? `/login?next=${encodeURIComponent(next)}` : "/login";
   const { showToast } = useUI();
 
   const {
@@ -33,7 +34,8 @@ export function SignupForm() {
     }
 
     showToast("Account created", "You are signed in");
-    router.push("/");
+    // Back to whatever they were looking at before signing up.
+    router.push(next ?? "/");
     router.refresh();
   }
 
@@ -91,7 +93,7 @@ export function SignupForm() {
 
       <p className="text-center text-sm text-muted">
         Already have an account?{" "}
-        <Link href="/login" className="font-medium text-brand-600 hover:underline">
+        <Link href={loginHref} className="font-medium text-brand-600 hover:underline">
           Sign in
         </Link>
       </p>

@@ -1,9 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { productSchema, slugify } from "@/lib/validation";
-import { createProduct, deleteProduct } from "@/lib/db/products";
-import { updateOrderStatus } from "@/lib/db/orders";
+import { productSchema, slugify, type ProductValues } from "@/lib/validation";
+import {
+  createProduct,
+  deleteProduct,
+  updateProduct,
+  type ProductInput,
+} from "@/lib/db/products";
+import { changeOrderStatus } from "@/lib/orders/update-status";
 import { getSession } from "@/lib/auth/session";
 import type { OrderStatus } from "@/types";
 
@@ -20,6 +25,47 @@ async function requireAdmin(): Promise<boolean> {
   return session?.role === "admin";
 }
 
+/**
+ * Turns validated form values into the repository's input shape. Field names
+ * carry straight through — the form, the schema, this, the document and the
+ * storefront all call them the same thing.
+ */
+function toProductInput(values: ProductValues): ProductInput {
+  return {
+    name: values.name,
+    description: values.description,
+    category: values.category,
+    sku: values.sku,
+    price: values.price,
+    // 0 and "no discount" are the same thing; store neither.
+    compareAtPrice:
+      values.compareAtPrice && values.compareAtPrice > 0 ? values.compareAtPrice : undefined,
+    material: values.material?.trim() || undefined,
+    strapType: values.strapType?.trim() || undefined,
+    badge: values.badge ? values.badge : null,
+    featured: values.featured ?? false,
+    variants: values.variants.map((variant) => {
+      // The main image belongs at the front of the gallery, once.
+      const gallery = [variant.image, ...variant.images].filter(Boolean);
+      return {
+        color: variant.color,
+        colorCode: variant.colorCode,
+        image: variant.image,
+        images: [...new Set(gallery)],
+        stock: variant.stock,
+      };
+    }),
+  };
+}
+
+/** Pages that show product data and need rebuilding after a write. */
+function revalidateProductPages(slug?: string): void {
+  revalidatePath("/admin/products");
+  revalidatePath("/products");
+  revalidatePath("/");
+  if (slug) revalidatePath(`/products/${slug}`);
+}
+
 export async function createProductAction(values: unknown): Promise<ActionResult> {
   if (!(await requireAdmin())) {
     return { ok: false, message: "You do not have permission to do that." };
@@ -28,36 +74,51 @@ export async function createProductAction(values: unknown): Promise<ActionResult
   const parsed = productSchema.safeParse(values);
   if (!parsed.success) {
     const first = parsed.error.issues[0];
-    return { ok: false, message: first?.message ?? "Check the form and try again." };
+    return { ok: false, message: first?.message ?? "Please check the product information." };
   }
 
-  const { name, description, price, compareAtPrice, category, image, stock, featured } =
-    parsed.data;
+  const result = await createProduct(toProductInput(parsed.data), slugify(parsed.data.name));
 
-  if (compareAtPrice !== undefined && compareAtPrice > 0 && compareAtPrice <= price) {
-    return { ok: false, message: "Compare-at price must be higher than the price." };
+  if (!result.ok) {
+    return { ok: false, message: "This SKU is already in use." };
   }
 
-  const product = await createProduct({
-    slug: slugify(name),
-    name,
-    description,
-    price,
-    compareAtPrice: compareAtPrice && compareAtPrice > 0 ? compareAtPrice : undefined,
-    category,
-    image: image ?? "",
-    stock,
-    featured: featured ?? false,
-  });
+  revalidateProductPages(result.product.slug);
+  return { ok: true, message: `"${result.product.name}" added.` };
+}
 
-  if (!product) {
-    return { ok: false, message: "A product with that name already exists." };
+export async function updateProductAction(
+  id: string,
+  values: unknown,
+): Promise<ActionResult> {
+  if (!(await requireAdmin())) {
+    return { ok: false, message: "You do not have permission to do that." };
   }
 
-  revalidatePath("/admin/products");
-  revalidatePath("/products");
-  revalidatePath("/");
-  return { ok: true, message: `"${product.name}" added.` };
+  if (typeof id !== "string" || id.length === 0) {
+    return { ok: false, message: "That product no longer exists." };
+  }
+
+  const parsed = productSchema.safeParse(values);
+  if (!parsed.success) {
+    const first = parsed.error.issues[0];
+    return { ok: false, message: first?.message ?? "Please check the product information." };
+  }
+
+  const result = await updateProduct(id, toProductInput(parsed.data), slugify(parsed.data.name));
+
+  if (!result.ok) {
+    return {
+      ok: false,
+      message:
+        result.reason === "sku-taken"
+          ? "This SKU is already in use."
+          : "That product no longer exists.",
+    };
+  }
+
+  revalidateProductPages(result.product.slug);
+  return { ok: true, message: `"${result.product.name}" saved.` };
 }
 
 export async function deleteProductAction(id: string): Promise<ActionResult> {
@@ -86,10 +147,16 @@ export async function updateOrderStatusAction(
     return { ok: false, message: "Unknown status." };
   }
 
-  const updated = await updateOrderStatus(id, status as OrderStatus);
-  if (!updated) return { ok: false, message: "That order no longer exists." };
+  const result = await changeOrderStatus(id, status as OrderStatus);
+  if (!result.ok) return { ok: false, message: result.message };
 
   revalidatePath("/admin/orders");
   revalidatePath("/admin");
-  return { ok: true, message: `Order marked ${status}.` };
+
+  return {
+    ok: true,
+    message: result.emailQueued
+      ? `Order marked ${status}. The customer has been emailed.`
+      : `Order was already ${status}.`,
+  };
 }

@@ -1,0 +1,607 @@
+###############################################################################
+# SmartShop API — click-through tests
+#
+# Needs the "REST Client" extension (humao.rest-client) in VS Code.
+# Install: Extensions panel -> search "REST Client" -> Install.
+#
+# Then a "Send Request" link appears above each request below. Click it and the
+# response opens in a side panel with the status code and body.
+#
+# Run them top to bottom the first time: the login requests capture tokens that
+# the later ones use.
+#
+# The dev server must be running:  npm run dev
+###############################################################################
+
+@base = http://localhost:3000/api
+
+
+###############################################################################
+# 1. PUBLIC — no token needed
+###############################################################################
+
+### All categories                                        expect 200
+GET {{base}}/categories
+
+### All products                                          expect 200
+GET {{base}}/products
+
+### Search                                                expect 200, count 1
+GET {{base}}/products?q=clutch
+
+### Filter by category                           expect 200, count 8 (all of them)
+GET {{base}}/products?category=ladies-bags
+
+### Cheapest first                                        expect 200
+GET {{base}}/products?sort=price-asc
+
+### One product, with related                             expect 200
+GET {{base}}/products/mini-crossbody-bag
+
+### A slug that does not exist                            expect 404
+GET {{base}}/products/this-does-not-exist
+
+
+###############################################################################
+# 2. SIGN IN — these capture the tokens used further down
+###############################################################################
+
+# @name adminLogin
+### Sign in as the admin                                  expect 200
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@smartshop.pk",
+  "password": "Admin1234"
+}
+
+###
+@adminToken = {{adminLogin.response.body.data.token}}
+
+
+# @name customerLogin
+### Sign in as the customer                               expect 200
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "demo@smartshop.pk",
+  "password": "Demo1234"
+}
+
+###
+@customerToken = {{customerLogin.response.body.data.token}}
+
+
+### Wrong password                                        expect 401
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@smartshop.pk",
+  "password": "ThisIsWrong1"
+}
+
+### Who am I                                              expect 200
+GET {{base}}/auth/me
+Authorization: Bearer {{adminToken}}
+
+### Who am I, without a token                             expect 401
+GET {{base}}/auth/me
+
+### Who am I, with a tampered token                       expect 401
+GET {{base}}/auth/me
+Authorization: Bearer {{adminToken}}XXXX
+
+
+###############################################################################
+# 3. REGISTER — change the email each time you run this section
+###############################################################################
+
+### Password too short                                    expect 422
+POST {{base}}/auth/register
+Content-Type: application/json
+
+{
+  "name": "Short Pass",
+  "email": "newperson@example.com",
+  "password": "abc",
+  "confirmPassword": "abc"
+}
+
+### Passwords do not match                                expect 422
+POST {{base}}/auth/register
+Content-Type: application/json
+
+{
+  "name": "Mismatch",
+  "email": "newperson@example.com",
+  "password": "Goodpass1",
+  "confirmPassword": "Goodpass2"
+}
+
+### Email already taken                                   expect 409
+POST {{base}}/auth/register
+Content-Type: application/json
+
+{
+  "name": "Duplicate",
+  "email": "admin@smartshop.pk",
+  "password": "Goodpass1",
+  "confirmPassword": "Goodpass1"
+}
+
+### A real new account                                    expect 201
+POST {{base}}/auth/register
+Content-Type: application/json
+
+{
+  "name": "New Person",
+  "email": "newperson@example.com",
+  "password": "Goodpass1",
+  "confirmPassword": "Goodpass1"
+}
+
+
+###############################################################################
+# 4. ADMIN ONLY — proves a customer cannot do admin things
+###############################################################################
+
+### Create a product with no token                        expect 401
+POST {{base}}/products
+Content-Type: application/json
+
+{
+  "name": "Sneaky Product",
+  "description": "Trying to add a product without being signed in at all.",
+  "category": "ladies-bags",
+  "sku": "SS-SNEAK-1",
+  "price": 1000,
+  "variants": [{ "color": "Black", "colorCode": "#000000", "image": "", "images": [], "stock": 1 }]
+}
+
+### Create a product as the CUSTOMER                      expect 403
+POST {{base}}/products
+Content-Type: application/json
+Authorization: Bearer {{customerToken}}
+
+{
+  "name": "Customer Product",
+  "description": "A customer should never be allowed to create a product.",
+  "category": "ladies-bags",
+  "sku": "SS-CUST-1",
+  "price": 1000,
+  "variants": [{ "color": "Black", "colorCode": "#000000", "image": "", "images": [], "stock": 1 }]
+}
+
+### Create a product as the ADMIN, two colours            expect 201
+POST {{base}}/products
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{
+  "name": "Test Tote Bag",
+  "description": "A tote bag added through the JSON API, just to check it works.",
+  "category": "ladies-bags",
+  "sku": "SS-TEST-500",
+  "price": 5500,
+  "compareAtPrice": 7000,
+  "material": "Soft quilted material",
+  "strapType": "Long detachable shoulder strap",
+  "badge": "New",
+  "featured": false,
+  "variants": [
+    { "color": "Beige", "colorCode": "#D8C3A5", "image": "", "images": [], "stock": 5 },
+    { "color": "Black", "colorCode": "#000000", "image": "", "images": [], "stock": 8 }
+  ]
+}
+
+### Same SKU in different case                            expect 409
+POST {{base}}/products
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{
+  "name": "Another Bag Entirely",
+  "description": "A different bag that reuses the same stock keeping unit code.",
+  "category": "ladies-bags",
+  "sku": "ss-test-500",
+  "price": 1999,
+  "variants": [{ "color": "Black", "colorCode": "#000000", "image": "", "images": [], "stock": 1 }]
+}
+
+### The same colour listed twice                          expect 422
+POST {{base}}/products
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{
+  "name": "Two Beige Bag",
+  "description": "This bag lists the same colour twice, which must be rejected.",
+  "category": "ladies-bags",
+  "sku": "SS-TEST-501",
+  "price": 1999,
+  "variants": [
+    { "color": "Beige", "colorCode": "#D8C3A5", "image": "", "images": [], "stock": 2 },
+    { "color": "beige", "colorCode": "#000000", "image": "", "images": [], "stock": 3 }
+  ]
+}
+
+### No colours at all                                     expect 422
+POST {{base}}/products
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{
+  "name": "Colourless Bag",
+  "description": "A bag with no colours at all, which the schema should refuse.",
+  "category": "ladies-bags",
+  "sku": "SS-TEST-502",
+  "price": 1999,
+  "variants": []
+}
+
+### A colour with no name                                 expect 422
+POST {{base}}/products
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{
+  "name": "Unnamed Colour Bag",
+  "description": "A bag whose colour has no name, which must be refused.",
+  "category": "ladies-bags",
+  "sku": "SS-TEST-503",
+  "price": 1999,
+  "variants": [{ "color": "", "colorCode": "#000000", "image": "", "images": [], "stock": 2 }]
+}
+
+### Negative stock on a colour                            expect 422
+POST {{base}}/products
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{
+  "name": "Negative Stock Bag",
+  "description": "A bag with negative stock on one colour, which is nonsense.",
+  "category": "ladies-bags",
+  "sku": "SS-TEST-504",
+  "price": 1999,
+  "variants": [{ "color": "Black", "colorCode": "#000000", "image": "", "images": [], "stock": -5 }]
+}
+
+### A colour code that is not hex                         expect 422
+POST {{base}}/products
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{
+  "name": "Bad Hex Bag",
+  "description": "The colour code is not a hex value, so it should be rejected.",
+  "category": "ladies-bags",
+  "sku": "SS-TEST-505",
+  "price": 1999,
+  "variants": [{ "color": "Black", "colorCode": "not-a-hex", "image": "", "images": [], "stock": 2 }]
+}
+
+### Compare-at price lower than price                     expect 422
+POST {{base}}/products
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{
+  "name": "Bad Pricing Bag",
+  "description": "The compare-at price is lower than the price, which is wrong.",
+  "category": "ladies-bags",
+  "sku": "SS-TEST-506",
+  "price": 5000,
+  "compareAtPrice": 3000,
+  "variants": [{ "color": "Black", "colorCode": "#000000", "image": "", "images": [], "stock": 1 }]
+}
+
+### Check it shows up in the shop, with both colours      expect 200
+GET {{base}}/products/test-tote-bag
+
+### Delete it as the CUSTOMER                             expect 403
+DELETE {{base}}/products/test-tote-bag
+Authorization: Bearer {{customerToken}}
+
+### Delete it as the ADMIN                                expect 200
+DELETE {{base}}/products/test-tote-bag
+Authorization: Bearer {{adminToken}}
+
+### Delete it again                                       expect 404
+DELETE {{base}}/products/test-tote-bag
+Authorization: Bearer {{adminToken}}
+
+
+###############################################################################
+# 5. ORDERS
+###############################################################################
+
+### Place an order with no token                          expect 401
+POST {{base}}/orders
+Content-Type: application/json
+
+{
+  "details": {
+    "fullName": "Guest Attempt",
+    "email": "guest@example.com",
+    "phone": "03001234567",
+    "address": "House 1, Street 2, Model Town",
+    "city": "Lahore"
+  },
+  "items": [{ "productId": "p-003", "color": "Black", "quantity": 1 }]
+}
+
+# @name newOrder
+### Place an order as the customer                        expect 201
+POST {{base}}/orders
+Content-Type: application/json
+Authorization: Bearer {{customerToken}}
+
+{
+  "details": {
+    "fullName": "Demo Customer",
+    "email": "demo@smartshop.pk",
+    "phone": "03001234567",
+    "address": "House 12, Street 5, Gulshan-e-Iqbal",
+    "city": "Karachi",
+    "notes": "Test order from the API."
+  },
+  "items": [{ "productId": "p-003", "color": "Black", "quantity": 2 }]
+}
+
+###
+@orderId = {{newOrder.response.body.data.order.id}}
+
+
+### Bad phone number                                      expect 422
+POST {{base}}/orders
+Content-Type: application/json
+Authorization: Bearer {{customerToken}}
+
+{
+  "details": {
+    "fullName": "Demo Customer",
+    "email": "demo@smartshop.pk",
+    "phone": "12345",
+    "address": "House 12, Street 5, Gulshan-e-Iqbal",
+    "city": "Karachi"
+  },
+  "items": [{ "productId": "p-003", "color": "Black", "quantity": 1 }]
+}
+
+### Out of stock colour (p-008 Black has 0)               expect 422
+POST {{base}}/orders
+Content-Type: application/json
+Authorization: Bearer {{customerToken}}
+
+{
+  "details": {
+    "fullName": "Demo Customer",
+    "email": "demo@smartshop.pk",
+    "phone": "03001234567",
+    "address": "House 12, Street 5, Gulshan-e-Iqbal",
+    "city": "Karachi"
+  },
+  "items": [{ "productId": "p-008", "color": "Black", "quantity": 1 }]
+}
+
+### Empty cart                                            expect 422
+POST {{base}}/orders
+Content-Type: application/json
+Authorization: Bearer {{customerToken}}
+
+{
+  "details": {
+    "fullName": "Demo Customer",
+    "email": "demo@smartshop.pk",
+    "phone": "03001234567",
+    "address": "House 12, Street 5, Gulshan-e-Iqbal",
+    "city": "Karachi"
+  },
+  "items": []
+}
+
+
+###############################################################################
+# 6. THE IMPORTANT ONE — a customer must not see other people's orders
+###############################################################################
+
+### Customer's orders        expect 200, scope "own", only their own
+GET {{base}}/orders
+Authorization: Bearer {{customerToken}}
+
+### Admin's view             expect 200, scope "all", a bigger count
+GET {{base}}/orders
+Authorization: Bearer {{adminToken}}
+
+### Customer reads their own order                        expect 200
+GET {{base}}/orders/{{orderId}}
+Authorization: Bearer {{customerToken}}
+
+### Admin reads the same order                            expect 200
+GET {{base}}/orders/{{orderId}}
+Authorization: Bearer {{adminToken}}
+
+# Take any OTHER order id from the admin listing above, paste it below, and
+# run this as the customer. It must answer 404 — not 403 — so the endpoint
+# cannot be used to find out which order ids exist.
+### Customer reads someone else's order                   expect 404
+GET {{base}}/orders/PASTE-ANOTHER-ORDER-ID-HERE
+Authorization: Bearer {{customerToken}}
+
+
+###############################################################################
+# 7. ORDER STATUS
+###############################################################################
+
+### Customer tries to change a status                     expect 403
+PATCH {{base}}/orders/{{orderId}}
+Content-Type: application/json
+Authorization: Bearer {{customerToken}}
+
+{ "status": "delivered" }
+
+### A status that does not exist                          expect 422
+PATCH {{base}}/orders/{{orderId}}
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{ "status": "teleported" }
+
+### Admin marks it shipped                                expect 200
+PATCH {{base}}/orders/{{orderId}}
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{ "status": "shipped" }
+
+
+###############################################################################
+# 8. STATUS EMAILS
+#
+# Each status change emails the customer. Re-selecting the status an order
+# already has sends nothing — watch "customerEmailed" in the response.
+#
+# Put a real inbox you can check in the "email" field below, then walk the
+# order through the statuses and watch the messages arrive.
+###############################################################################
+
+# @name emailOrder
+### Place an order to experiment with                     expect 201
+POST {{base}}/orders
+Content-Type: application/json
+Authorization: Bearer {{customerToken}}
+
+{
+  "details": {
+    "fullName": "Status Walkthrough",
+    "email": "PUT-YOUR-EMAIL-HERE@example.com",
+    "phone": "03001234567",
+    "address": "House 5, Street 8, Johar Town",
+    "city": "Lahore"
+  },
+  "items": [{ "productId": "p-003", "color": "Black", "quantity": 1 }]
+}
+
+###
+@emailOrderId = {{emailOrder.response.body.data.order.id}}
+
+
+### Mark it shipped               expect 200, customerEmailed true
+PATCH {{base}}/orders/{{emailOrderId}}
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{ "status": "shipped" }
+
+### Mark it shipped AGAIN         expect 200, customerEmailed FALSE
+PATCH {{base}}/orders/{{emailOrderId}}
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{ "status": "shipped" }
+
+### Mark it delivered             expect 200, customerEmailed true
+PATCH {{base}}/orders/{{emailOrderId}}
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{ "status": "delivered" }
+
+### Mark it cancelled             expect 200, customerEmailed true
+PATCH {{base}}/orders/{{emailOrderId}}
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{ "status": "cancelled" }
+
+
+###############################################################################
+# 9. COLOUR VARIANTS — the end-to-end bit
+#
+# p-003 Mini Crossbody Bag comes in Black 12, Cream 9, Navy 6, Red 4.
+# Check the counts first, order one colour, then check them again: only that
+# colour should have moved.
+###############################################################################
+
+### What colours and stock does it have                   expect 200
+GET {{base}}/products/mini-crossbody-bag
+
+### A colour that does not exist                          expect 422
+POST {{base}}/orders
+Content-Type: application/json
+Authorization: Bearer {{customerToken}}
+
+{
+  "details": {
+    "fullName": "Variant Test",
+    "email": "demo@smartshop.pk",
+    "phone": "03001234567",
+    "address": "House 9, Street 4, Gulberg",
+    "city": "Lahore"
+  },
+  "items": [{ "productId": "p-003", "color": "Purple", "quantity": 1 }]
+}
+
+### More than that colour has                             expect 422
+POST {{base}}/orders
+Content-Type: application/json
+Authorization: Bearer {{customerToken}}
+
+{
+  "details": {
+    "fullName": "Variant Test",
+    "email": "demo@smartshop.pk",
+    "phone": "03001234567",
+    "address": "House 9, Street 4, Gulberg",
+    "city": "Lahore"
+  },
+  "items": [{ "productId": "p-003", "color": "Red", "quantity": 99 }]
+}
+
+### A made-up price in the body                           expect 201
+# The body says the bag costs 1 rupee. The response total must be the real
+# price from the catalogue, not 1 — the body only picks product, colour and
+# quantity.
+POST {{base}}/orders
+Content-Type: application/json
+Authorization: Bearer {{customerToken}}
+
+{
+  "details": {
+    "fullName": "Variant Test",
+    "email": "demo@smartshop.pk",
+    "phone": "03001234567",
+    "address": "House 9, Street 4, Gulberg",
+    "city": "Lahore"
+  },
+  "items": [{ "productId": "p-003", "color": "Navy", "quantity": 2, "price": 1 }]
+}
+
+### Two colours of the same product in one order          expect 201
+# The response must contain two items, each with its own colour — not one item
+# with a quantity of three.
+POST {{base}}/orders
+Content-Type: application/json
+Authorization: Bearer {{customerToken}}
+
+{
+  "details": {
+    "fullName": "Variant Test",
+    "email": "demo@smartshop.pk",
+    "phone": "03001234567",
+    "address": "House 9, Street 4, Gulberg",
+    "city": "Lahore"
+  },
+  "items": [
+    { "productId": "p-003", "color": "Black", "quantity": 1 },
+    { "productId": "p-003", "color": "Cream", "quantity": 2 }
+  ]
+}
+
+### Now check the stock again                             expect 200
+# Navy down by 2, Black down by 1, Cream down by 2, Red untouched at 4.
+GET {{base}}/products/mini-crossbody-bag

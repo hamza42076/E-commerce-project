@@ -75,16 +75,23 @@ export default function CartPage() {
 
       <div className="grid gap-8 lg:grid-cols-[1fr_21rem]">
         <ul className="space-y-4">
-          {entries.map(({ product, quantity, lineTotal }) => (
+          {entries.map(({ product, variant, color, quantity, lineTotal }) => (
             <li
-              key={product.id}
+              // Product and colour together, so two colours of one bag are two
+              // rows rather than one with a quantity of two.
+              key={`${product.id}::${color}`}
               className="flex gap-4 rounded-2xl border border-line bg-surface-raised p-4 transition hover:border-brand-200"
             >
               <Link
                 href={`/products/${product.slug}`}
                 className="h-24 w-24 shrink-0 overflow-hidden rounded-xl border border-line"
               >
-                <ProductImage product={product} iconClass="h-2/5 w-2/5" />
+                <ProductImage
+                  product={product}
+                  src={variant.image}
+                  alt={color ? `${product.name} in ${color}` : product.name}
+                  iconClass="h-2/5 w-2/5"
+                />
               </Link>
 
               <div className="flex min-w-0 flex-1 flex-col gap-2">
@@ -96,6 +103,15 @@ export default function CartPage() {
                     >
                       {product.name}
                     </Link>
+                    {color && (
+                      <p className="mt-1 flex items-center gap-1.5 text-sm text-muted">
+                        <span
+                          className="h-3 w-3 rounded-full border border-black/15 dark:border-white/20"
+                          style={{ backgroundColor: variant.colorCode || "#d4d4d8" }}
+                        />
+                        {color}
+                      </p>
+                    )}
                     <p className="mt-0.5 text-sm text-muted">
                       {formatPrice(product.price)} each
                     </p>
@@ -106,12 +122,12 @@ export default function CartPage() {
                 <div className="mt-auto flex items-center gap-4">
                   <QuantityStepper
                     value={quantity}
-                    max={product.stock}
-                    onChange={(next) => setQuantity(product.id, next)}
+                    max={variant.stock}
+                    onChange={(next) => setQuantity(product.id, color, next)}
                   />
                   <button
                     type="button"
-                    onClick={() => removeItem(product.id)}
+                    onClick={() => removeItem(product.id, color)}
                     className="text-sm text-muted underline-offset-4 transition hover:text-rose-600 hover:underline"
                   >
                     Remove

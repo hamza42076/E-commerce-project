@@ -12,8 +12,9 @@ import nodemailer from "nodemailer";
 import {
   newOrderOwnerEmail,
   orderConfirmationEmail,
+  orderStatusEmail,
 } from "../src/lib/email/templates.ts";
-import type { Order } from "../src/types/index.ts";
+import type { Order, OrderStatus } from "../src/types/index.ts";
 
 const recipient = process.argv.slice(2).find((arg) => arg.includes("@"));
 
@@ -27,12 +28,28 @@ const sampleOrder: Order = {
   city: "Lahore",
   notes: "Please call before arriving.",
   items: [
-    { productId: "p-001", name: "Wireless Noise-Cancelling Headphones", price: 24999, quantity: 1 },
-    { productId: "p-003", name: "65W USB-C Fast Charger", price: 4299, quantity: 2 },
+    {
+      productId: "p-001",
+      name: "Full-Grain Leather Tote",
+      price: 8999,
+      quantity: 1,
+      color: "Tan",
+      colorCode: "#b08968",
+      image: "",
+    },
+    {
+      productId: "p-003",
+      name: "Mini Crossbody Bag",
+      price: 4299,
+      quantity: 2,
+      color: "Black",
+      colorCode: "#1a1a1a",
+      image: "",
+    },
   ],
-  subtotal: 33597,
+  subtotal: 17597,
   delivery: 0,
-  total: 33597,
+  total: 17597,
   status: "pending",
   createdAt: new Date().toISOString(),
 };
@@ -47,6 +64,20 @@ console.log("Customer : " + customer.subject);
 console.log("           -> email-preview-customer.html");
 console.log("Owner    : " + owner.subject);
 console.log("           -> email-preview-owner.html");
+
+// One preview per status, so all four tones can be eyeballed side by side.
+const STATUSES: OrderStatus[] = ["pending", "shipped", "delivered", "cancelled"];
+const statusMails = STATUSES.map((status) => {
+  const mail = orderStatusEmail({ ...sampleOrder, status });
+  return { status, mail };
+});
+
+for (const { status, mail } of statusMails) {
+  await writeFile(`email-preview-status-${status}.html`, mail.html);
+  console.log(`${status.padEnd(9)}: ${mail.subject}`);
+  console.log(`           -> email-preview-status-${status}.html`);
+}
+
 console.log("\nOpen those files in a browser to see how they look.");
 
 if (!recipient) {

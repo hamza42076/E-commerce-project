@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { CartProvider } from "@/context/CartContext";
 import { UIProvider } from "@/context/UIContext";
+import { SessionProvider } from "@/context/SessionContext";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 import { CartDrawer } from "@/components/CartDrawer";
@@ -26,7 +27,7 @@ export const metadata: Metadata = {
     template: "%s · SmartShop",
   },
   description:
-    "Electronics, fashion, home goods and beauty. A small, carefully picked catalogue delivered across Pakistan.",
+    "Ladies bags — totes, crossbodies, satchels and clutches. A small, carefully picked catalogue delivered across Pakistan.",
 };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
@@ -39,17 +40,23 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">
-        <CartProvider catalogue={catalogue}>
-          <UIProvider>
-            <Navbar
-              session={session ? { name: session.name, role: session.role } : null}
-            />
-            <main className="flex-1">{children}</main>
-            <Footer />
-            <CartDrawer />
-            <Toaster />
-          </UIProvider>
-        </CartProvider>
+        <SessionProvider
+          user={
+            session
+              ? { name: session.name, email: session.email, role: session.role }
+              : null
+          }
+        >
+          <CartProvider catalogue={catalogue}>
+            <UIProvider>
+              <Navbar />
+              <main className="flex-1">{children}</main>
+              <Footer />
+              <CartDrawer />
+              <Toaster />
+            </UIProvider>
+          </CartProvider>
+        </SessionProvider>
       </body>
     </html>
   );

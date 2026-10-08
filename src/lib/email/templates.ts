@@ -2,7 +2,7 @@
 // scripts/test-email.mts can import this file under plain Node, which does not
 // understand tsconfig path aliases. Same reason as scripts/seed.mts.
 import { formatPrice } from "../format.ts";
-import type { Order } from "@/types";
+import type { Order, OrderItem, OrderStatus } from "@/types";
 
 /**
  * Order confirmation email.
@@ -28,6 +28,19 @@ const INK = "#16161d";
 const MUTED = "#6b6b7b";
 const LINE = "#e7e7ee";
 
+/**
+ * The colour ordered, from the order's own snapshot — not looked up from the
+ * product, which may have changed or been deleted since.
+ */
+function colorNote(item: OrderItem): string {
+  if (!item.color) return "";
+  return `<br /><span style="color:${MUTED};font-size:13px;">Colour: ${escapeHtml(item.color)}</span>`;
+}
+
+function colorText(item: OrderItem): string {
+  return item.color ? ` (${item.color})` : "";
+}
+
 /** One line of a totals block. Shared by both emails. */
 const totalRow = (label: string, value: string, bold = false) => `
     <tr>
@@ -52,7 +65,7 @@ export function orderConfirmationEmail(order: Order): {
         <tr>
           <td style="padding:10px 0;border-bottom:1px solid ${LINE};color:${INK};font-size:14px;">
             ${escapeHtml(item.name)}
-            <span style="color:${MUTED};">&times; ${item.quantity}</span>
+            <span style="color:${MUTED};">&times; ${item.quantity}</span>${colorNote(item)}
           </td>
           <td style="padding:10px 0;border-bottom:1px solid ${LINE};color:${INK};font-size:14px;text-align:right;white-space:nowrap;">
             ${formatPrice(item.price * item.quantity)}
@@ -156,7 +169,7 @@ export function orderConfirmationEmail(order: Order): {
     `YOUR ORDER`,
     ...order.items.map(
       (item) =>
-        `  ${item.name} x ${item.quantity} — ${formatPrice(item.price * item.quantity)}`,
+        `  ${item.name}${colorText(item)} x ${item.quantity} — ${formatPrice(item.price * item.quantity)}`,
     ),
     ``,
     `  Subtotal: ${formatPrice(order.subtotal)}`,
@@ -194,7 +207,7 @@ export function newOrderOwnerEmail(order: Order): {
       (item) => `
         <tr>
           <td style="padding:8px 0;border-bottom:1px solid ${LINE};color:${INK};font-size:14px;">
-            <strong>${item.quantity} &times;</strong> ${escapeHtml(item.name)}
+            <strong>${item.quantity} &times;</strong> ${escapeHtml(item.name)}${colorNote(item)}
           </td>
           <td style="padding:8px 0;border-bottom:1px solid ${LINE};color:${MUTED};font-size:13px;text-align:right;white-space:nowrap;">
             ${formatPrice(item.price * item.quantity)}
@@ -289,7 +302,7 @@ export function newOrderOwnerEmail(order: Order): {
     ``,
     `PACK THIS`,
     ...order.items.map(
-      (item) => `  ${item.quantity} x ${item.name} — ${formatPrice(item.price * item.quantity)}`,
+      (item) => `  ${item.quantity} x ${item.name}${colorText(item)} — ${formatPrice(item.price * item.quantity)}`,
     ),
     ``,
     `DELIVER TO`,
@@ -308,4 +321,172 @@ export function newOrderOwnerEmail(order: Order): {
   ];
 
   return { subject, html, text: lines.join("\n") };
+}
+
+/**
+ * Sent to the customer when the shop changes an order's status from the admin
+ * panel. One template, four tones — a cancellation should not read like a
+ * dispatch notice.
+ */
+
+type StatusCopy = {
+  subject: (reference: string) => string;
+  heading: string;
+  body: string;
+  /** Accent colour for the status strip. Cancelled is the only sombre one. */
+  stripe: string;
+  showTotal: boolean;
+};
+
+const STATUS_COPY: Record<OrderStatus, StatusCopy> = {
+  pending: {
+    subject: (r) => `Order ${r} is being prepared — SmartShop`,
+    heading: "We are preparing your order",
+    body: "It is back in the queue and we will let you know as soon as it goes out for delivery.",
+    stripe: "#f59e0b",
+    showTotal: true,
+  },
+  shipped: {
+    subject: (r) => `Order ${r} is on the way — SmartShop`,
+    heading: "Your order is on the way",
+    body: "It has left us and should reach you within 2 to 4 working days. Our rider will call before arriving.",
+    stripe: "#0284c7",
+    showTotal: true,
+  },
+  delivered: {
+    subject: (r) => `Order ${r} delivered — SmartShop`,
+    heading: "Delivered. Thank you.",
+    body: "Your order has been marked delivered. If anything is missing or not right, reply to this email within 7 days and we will sort it out.",
+    stripe: "#059669",
+    showTotal: false,
+  },
+  cancelled: {
+    subject: (r) => `Order ${r} has been cancelled — SmartShop`,
+    heading: "Your order has been cancelled",
+    body: "This order will not be delivered and there is nothing to pay. If you did not expect this, reply to this email and we will look into it.",
+    stripe: "#e11d48",
+    showTotal: false,
+  },
+};
+
+export function orderStatusEmail(order: Order): {
+  subject: string;
+  html: string;
+  text: string;
+} {
+  const copy = STATUS_COPY[order.status];
+
+  const itemLines = order.items
+    .map(
+      (item) => `
+        <tr>
+          <td style="padding:8px 0;border-bottom:1px solid ${LINE};color:${INK};font-size:14px;">
+            ${escapeHtml(item.name)} <span style="color:${MUTED};">&times; ${item.quantity}</span>${colorNote(item)}
+          </td>
+          <td style="padding:8px 0;border-bottom:1px solid ${LINE};color:${INK};font-size:14px;text-align:right;white-space:nowrap;">
+            ${formatPrice(item.price * item.quantity)}
+          </td>
+        </tr>`,
+    )
+    .join("");
+
+  const html = `<!doctype html>
+<html>
+  <body style="margin:0;padding:0;background:#f6f7fb;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f7fb;padding:24px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid ${LINE};">
+
+            <tr><td style="background:${copy.stripe};height:5px;"></td></tr>
+
+            <tr>
+              <td style="padding:24px 24px 0;">
+                <div style="color:${BRAND};font-size:18px;font-weight:600;">SmartShop</div>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:20px 24px 0;">
+                <h1 style="margin:0 0 10px;color:${INK};font-size:22px;font-weight:600;">
+                  ${copy.heading}
+                </h1>
+                <p style="margin:0;color:${MUTED};font-size:14px;line-height:1.6;">
+                  Order <strong style="color:${INK};">${escapeHtml(order.reference)}</strong>.
+                  ${copy.body}
+                </p>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:22px 24px 0;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td colspan="2" style="padding-bottom:4px;color:${MUTED};font-size:12px;text-transform:uppercase;letter-spacing:0.04em;">
+                      In this order
+                    </td>
+                  </tr>
+                  ${itemLines}
+                  ${
+                    copy.showTotal
+                      ? totalRow("Due on delivery", formatPrice(order.total), true)
+                      : totalRow("Order total", formatPrice(order.total))
+                  }
+                </table>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:22px 24px;">
+                <div style="background:#f6f7fb;border-radius:8px;padding:16px;">
+                  <div style="color:${MUTED};font-size:12px;text-transform:uppercase;letter-spacing:0.04em;padding-bottom:6px;">
+                    Delivery address
+                  </div>
+                  <div style="color:${INK};font-size:14px;line-height:1.6;">
+                    ${escapeHtml(order.customerName)}<br />
+                    ${escapeHtml(order.address)}<br />
+                    ${escapeHtml(order.city)}<br />
+                    ${escapeHtml(order.phone)}
+                  </div>
+                </div>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="background:#f6f7fb;padding:16px 24px;color:${MUTED};font-size:12px;text-align:center;">
+                SmartShop &middot; Prices in PKR &middot; Free delivery over Rs 5,000
+              </td>
+            </tr>
+
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+
+  const lines = [
+    copy.heading.toUpperCase(),
+    ``,
+    `Order ${order.reference}.`,
+    copy.body,
+    ``,
+    `IN THIS ORDER`,
+    ...order.items.map(
+      (item) =>
+        `  ${item.name}${colorText(item)} x ${item.quantity} — ${formatPrice(item.price * item.quantity)}`,
+    ),
+    ``,
+    `  ${copy.showTotal ? "Due on delivery" : "Order total"}: ${formatPrice(order.total)}`,
+    ``,
+    `DELIVERY ADDRESS`,
+    `  ${order.customerName}`,
+    `  ${order.address}`,
+    `  ${order.city}`,
+    `  ${order.phone}`,
+    ``,
+    `SmartShop — prices in PKR, free delivery over Rs 5,000.`,
+  ];
+
+  return { subject: copy.subject(order.reference), html, text: lines.join("\n") };
 }

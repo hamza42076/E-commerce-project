@@ -4,19 +4,17 @@ const COLUMNS = [
   {
     title: "Shop",
     links: [
-      { href: "/products", label: "All products" },
-      { href: "/products?category=electronics", label: "Electronics" },
-      { href: "/products?category=fashion", label: "Fashion" },
-      { href: "/products?category=home", label: "Home & Living" },
-      { href: "/products?category=beauty", label: "Beauty" },
+      { href: "/products", label: "All bags" },
+      { href: "/products?sort=price-asc", label: "Lowest price first" },
+      { href: "/products?sort=price-desc", label: "Highest price first" },
     ],
   },
   {
-    title: "Help",
+    title: "Your account",
     links: [
-      { href: "/products?sort=price-asc", label: "Best value" },
-      { href: "/products?sort=rating", label: "Top rated" },
       { href: "/cart", label: "Your cart" },
+      { href: "/login", label: "Sign in" },
+      { href: "/signup", label: "Create an account" },
     ],
   },
 ];
@@ -45,8 +43,8 @@ export function Footer() {
               </span>
             </Link>
             <p className="mt-3 max-w-sm text-sm text-muted">
-              A small, carefully picked catalogue. Electronics, clothing, home goods and
-              skincare, delivered across Pakistan.
+              Ladies bags, chosen one at a time rather than bought by the container.
+              Delivered across Pakistan, cash on delivery.
             </p>
           </div>
 

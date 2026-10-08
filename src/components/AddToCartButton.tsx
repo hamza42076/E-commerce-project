@@ -1,32 +1,54 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useCart } from "@/context/CartContext";
 import { useUI } from "@/context/UIContext";
+import { useIsSignedIn } from "@/context/SessionContext";
+import { findVariant } from "@/lib/products/variants";
 import type { Product } from "@/types";
 
 export function AddToCartButton({
   product,
+  /** Which colour is being added. Empty string for a product without colours. */
+  color,
   quantity = 1,
   /** Slide the cart open after adding. Used where the intent is deliberate. */
   revealCart = false,
   className = "",
 }: {
   product: Product;
+  color: string;
   quantity?: number;
   revealCart?: boolean;
   className?: string;
 }) {
   const { addItem } = useCart();
   const { showToast, openCart } = useUI();
+  const signedIn = useIsSignedIn();
+  const router = useRouter();
   const [justAdded, setJustAdded] = useState(false);
-  const soldOut = product.stock < 1;
+  // This colour's stock, not the product total — a bag can be sold out in red
+  // while black is still available.
+  const soldOut = (findVariant(product, color)?.stock ?? 0) < 1;
 
   function handleClick() {
-    addItem(product.id, quantity);
+    // Shopping needs an account. The checkout action re-checks this on the
+    // server; this is only so the person is not led down a dead end.
+    if (!signedIn) {
+      // Read at click time rather than through a hook, so no Suspense
+      // boundary is needed and any active filters are preserved.
+      const back = window.location.pathname + window.location.search;
+      showToast("Sign in to add items", "Takes a moment, then you are back here");
+      router.push(`/login?next=${encodeURIComponent(back)}`);
+      return;
+    }
+
+    addItem(product.id, color, quantity);
     showToast(
       "Added to cart",
-      quantity > 1 ? `${quantity} x ${product.name}` : product.name,
+      [color, quantity > 1 ? `x${quantity}` : null].filter(Boolean).join(" ") ||
+        product.name,
     );
     setJustAdded(true);
     window.setTimeout(() => setJustAdded(false), 1400);
@@ -60,8 +82,10 @@ export function AddToCartButton({
           </svg>
           Added
         </>
-      ) : (
+      ) : signedIn ? (
         "Add to cart"
+      ) : (
+        "Sign in to buy"
       )}
     </button>
   );

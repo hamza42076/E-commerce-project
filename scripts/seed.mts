@@ -86,9 +86,16 @@ try {
 
   await Promise.all([
     products.createIndex({ slug: 1 }, { unique: true }),
+    // Unique, case-insensitive, and sparse so documents written before SKUs
+    // existed (which have no sku field) do not all collide on null.
+    products.createIndex(
+      { sku: 1 },
+      { unique: true, sparse: true, collation: { locale: "en", strength: 2 } },
+    ),
     products.createIndex({ category: 1 }),
     products.createIndex({ featured: -1 }),
     products.createIndex({ price: 1 }),
+    products.createIndex({ "variants.color": 1 }),
     users.createIndex({ email: 1 }, { unique: true }),
     db.collection("orders").createIndex({ createdAt: -1 }),
     db.collection("orders").createIndex({ status: 1 }),

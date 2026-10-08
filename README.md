@@ -18,14 +18,15 @@ The app also runs with no database at all — see [Without a database](#without-
 | ------------------ | ----------------------------------------------------------------------- |
 | `/`                | Hero, delivery promises, category tiles, featured products, promo banner |
 | `/products`        | Catalogue with search, category filter and sorting (all URL-driven)      |
-| `/products/[slug]` | Product detail, stock state, quantity picker, related products           |
-| `/cart`            | Line items, quantity editing, order summary                              |
+| `/products/[slug]` | Colour swatches, per-colour gallery and stock, quantity, add to cart     |
+| `/cart`            | Line items per colour, quantity editing, order summary                   |
 | `/checkout`        | Delivery details form, places the order, shows the reference             |
 | `/login`           | Sign in                                                                  |
 | `/signup`          | Create an account                                                        |
 | `/admin`           | Revenue, order counts, recent orders — **admin role only**               |
-| `/admin/orders`    | Every order with customer details; change status inline                  |
-| `/admin/products`  | Product list with delete, plus the add-product form                      |
+| `/admin/orders`    | Every order with customer details and the colour ordered; status inline  |
+| `/admin/products`  | Product list with edit and delete, plus the add-product form             |
+| `/admin/products/[slug]/edit` | The same form, pre-filled — add, remove and re-stock colours  |
 
 ## Theme
 
@@ -118,6 +119,226 @@ counts.
 Checkout never trusts prices from the browser: the action takes only product ids
 and quantities, then re-prices from the catalogue and re-checks stock.
 
+## The product contract
+
+One shape, named the same thing everywhere: the admin form, the zod schema, the
+server action, the MongoDB document, the storefront, the cart, checkout and the
+order snapshot. Nothing renames a field on the way through.
+
+```ts
+Product {
+  id, slug, sku, name, description,
+  price, compareAtPrice?,
+  category, material?, strapType?, badge?,
+  variants: ProductVariant[],
+  image, stock,          // pre-variant fallback, see below
+  rating, reviewCount, featured?,
+  createdAt, updatedAt
+}
+
+ProductVariant {
+  color,        // "Beige" — unique within a product
+  colorCode,    // "#D8C3A5", or "" for none
+  image,        // main image for this colour
+  images,       // gallery, `image` first
+  stock         // this colour's stock
+}
+```
+
+`src/types/index.ts` is the definition; `src/lib/validation.ts` validates it;
+`src/lib/db/mongo.ts` stores it.
+
+### Colour is the source of truth for stock and images
+
+There is no `colors: string[]` beside `variants`. A colour's stock and its
+photography live on the variant, because that is what everything downstream
+reads: the swatch, the gallery, the stock line, the cart line and the order
+snapshot all come from one variant.
+
+`price` stays on the product — colours of the same bag cost the same.
+
+### Variants or the old two fields
+
+Products created before variants existed have an empty `variants` and keep their
+`image` and `stock`. Rather than branching at each call site, everything goes
+through `src/lib/products/variants.ts`:
+
+| Function | What it answers |
+| -------- | --------------- |
+| `variantList(product)` | The colours, or one synthetic entry carrying the old `image`/`stock` with `color: ""` |
+| `findVariant(product, color)` | The variant for a colour; `""` matches a variantless product |
+| `totalStock(product)` | Across colours, or the old `stock` |
+| `primaryImage(product)` | What a card shows |
+| `galleryFor(variant)` | That colour's images, main first, de-duplicated |
+| `cartLineKey(id, color)` | A cart line's identity |
+
+That empty-string colour is how "this product has no colour choice" is spelled
+throughout — in the cart, in checkout and in an order item. No colour name is
+invented for an older product.
+
+`image` and `stock` on a product written *by this app* are a derived mirror of
+the variants (first in-stock image, summed stock), written in one place in
+`src/lib/db/products.ts`. They exist because the listing queries and older
+documents read them; they are never edited independently.
+
+### Stock
+
+Stock belongs to a colour. Checkout validates against the selected colour, not
+the product total — a bag sold out in red is still buyable in black.
+
+An order decrements the colour it was placed for, through a single conditional
+update:
+
+```js
+updateOne(
+  { _id, variants: { $elemMatch: { color, stock: { $gte: quantity } } } },
+  { $inc: { "variants.$.stock": -quantity, stock: -quantity } },
+)
+```
+
+The check and the decrement are one operation, so two orders landing together
+cannot both pass and oversell. Lines are reserved one at a time; if a later line
+loses that race, the earlier reservations are put back before the error is
+returned.
+
+> **Known limit:** reserving stock and writing the order are separate
+> operations, not one transaction. If the order write fails the reservations are
+> released in a `catch`, but a process killed between the two would leave stock
+> reserved for an order that was never written. Atlas supports transactions, so
+> this is fixable when it matters.
+
+### Order snapshots
+
+An order item copies in the name, price, colour, colour code and image as they
+were at the time. An order therefore still reads correctly after the product is
+re-priced, after that colour is removed, and after the whole product is deleted
+— verified by doing all three.
+
+### Images
+
+A variant has one `image` and any number of `images`. Both accept an uploaded
+`/uploads/...` path or an external URL, validated by the same schema. Uploads go
+through the existing action unchanged — magic-byte sniffing, 5 MB cap, no SVG,
+generated filename.
+
+## JSON API
+
+A REST API sits alongside the web UI for clients that cannot use Server Actions
+— a mobile app, a script, another service.
+
+### Authentication: bearer tokens, not cookies
+
+The API reads `Authorization: Bearer <token>` and **ignores the session
+cookie**, on purpose. A cookie is attached by the browser automatically, so a
+cookie-authenticated `POST` endpoint can be fired from any other site — that is
+CSRF. Next.js protects Server Actions against it; plain route handlers get no
+such help. A bearer token has to be attached deliberately, so there is nothing
+for another site to abuse, and it is what a mobile client would carry anyway.
+
+Both schemes sign the same payload through `src/lib/auth/token.ts`, so there is
+one signing routine rather than two that can drift apart.
+
+Tokens last a week and cannot be revoked before they expire — there is no
+server-side session store. That is why there is no logout endpoint: signing out
+is the client discarding its token.
+
+### Response shape
+
+```jsonc
+// success
+{ "data": { ... } }
+// failure
+{ "error": { "message": "...", "fields": { "password": "..." } } }
+```
+
+`fields` appears on 422 responses and comes from the same zod schemas the forms
+use.
+
+### Endpoints
+
+| Method | Path | Who | What |
+| ------ | ---- | --- | ---- |
+| `POST` | `/api/auth/register` | anyone | Creates an account, returns a token |
+| `POST` | `/api/auth/login` | anyone | Returns a token |
+| `GET` | `/api/auth/me` | signed in | The current account, re-read from the database |
+| `GET` | `/api/products` | anyone | `?q=` `?category=` `?sort=` |
+| `POST` | `/api/products` | admin | Creates a product, variants included |
+| `GET` | `/api/products/[slug]` | anyone | One product plus related ones |
+| `DELETE` | `/api/products/[slug]` | admin | Deletes it |
+| `GET` | `/api/categories` | anyone | All categories |
+| `POST` | `/api/orders` | signed in | Places an order |
+| `GET` | `/api/orders` | signed in | Admin gets all; a customer gets only their own |
+| `GET` | `/api/orders/[id]` | signed in | Own order, or any order for an admin |
+| `PATCH` | `/api/orders/[id]` | admin | `{ "status": "shipped" }` |
+
+Statuses used: `200`, `201`, `400` (no JSON body), `401` (no or bad token),
+`403` (wrong role), `404`, `409` (duplicate), `422` (validation).
+
+Which account a request acts as always comes from the token, never from a
+parameter — so a customer cannot ask for someone else's orders. Reading another
+customer's order answers `404`, not `403`, so the endpoint cannot be used to
+discover which order ids exist.
+
+### Example
+
+```bash
+TOKEN=$(curl -s -X POST localhost:3000/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"admin@smartshop.pk","password":"Admin1234"}' \
+  | sed 's/.*"token":"\([^"]*\)".*/\1/')
+
+curl -s localhost:3000/api/orders -H "Authorization: Bearer $TOKEN"
+```
+
+### Shared with the web UI
+
+Two pieces of behaviour have two entry points each, so each one lives in a
+single module that both call. They differ only in how they authenticate — the
+Server Action reads the cookie session, the route handler reads the bearer
+token.
+
+| Behaviour | Module | Entry points |
+| --------- | ------ | ------------ |
+| Placing an order | `src/lib/orders/place-order.ts` | checkout Server Action, `POST /api/orders` |
+| Changing a status | `src/lib/orders/update-status.ts` | admin Server Action, `PATCH /api/orders/[id]` |
+
+Pricing, stock checks and the emails are written once. Copied into each, the two
+would eventually disagree about what an order costs or who gets told about it.
+
+## Emails
+
+All of them go out through `after()`, so a slow or unreachable SMTP server never
+holds up the response. `sendMail` swallows its own failures and logs them: an
+order that is placed stays placed, and a status that is saved stays saved, even
+if no email goes out.
+
+| When | To | Subject |
+| ---- | -- | ------- |
+| Order placed | customer | `Order SS-1042 confirmed` |
+| Order placed | `OWNER_EMAIL` | `New order SS-1042 — Rs 33,597 — Lahore` |
+| Status → pending | customer | `Order SS-1042 is being prepared` |
+| Status → shipped | customer | `Order SS-1042 is on the way` |
+| Status → delivered | customer | `Order SS-1042 delivered` |
+| Status → cancelled | customer | `Order SS-1042 has been cancelled` |
+
+The owner is not emailed about status changes — they are the one making them.
+
+**Re-selecting the status an order already has sends nothing.** Writing the same
+value again would be harmless; emailing the customer again would not be.
+`changeOrderStatus` reports this back as `emailQueued: false`, which the API
+returns as `customerEmailed` and the admin toast words as "Order was already
+shipped."
+
+Every template ships an HTML and a plain-text part, and customer-supplied values
+— name, address, notes — are HTML-escaped before going into the markup.
+
+Preview all six without sending anything:
+
+```bash
+npm run email:preview          # writes email-preview-*.html
+npm run email:test -- you@example.com   # checks SMTP, then sends
+```
+
 ## Database
 
 | Collection   | `_id`         | Notes                                        |
@@ -174,11 +395,13 @@ fails on purpose until the first two boxes are ticked.
 
 **Content that is not real**
 
-- [ ] The 14 products in `src/lib/db/seed-products.ts` are invented — names,
-      prices and descriptions. Replace them with the real catalogue.
-- [ ] Every product carries an invented `rating` and `reviewCount`. Showing
-      made-up reviews to customers is deceptive and is regulated in most
-      markets. Either build real reviews or drop both fields from the UI.
+- [ ] The eight bags in `src/lib/db/seed-products.ts` are placeholders —
+      invented names, prices and descriptions. Replace them with the real stock
+      from the admin panel.
+- [x] Ratings. Seeded products carry `rating: 0, reviewCount: 0`, and the
+      `Rating` component renders nothing when `reviewCount` is 0, so no made-up
+      score is ever shown. Real ratings need a reviews feature, which does not
+      exist yet.
 - [ ] The five sample orders in `src/lib/db/orders.ts` only appear in the
       no-database fallback. Now that MongoDB is connected the orders list starts
       empty and fills with real ones, so this is no longer visible — but the
@@ -194,5 +417,25 @@ fails on purpose until the first two boxes are ticked.
 ## Not built yet
 
 - Online payment — orders are cash on delivery.
-- Editing an existing product (add and delete only).
 - Customer-facing order history.
+- Reviews, so `rating` and `reviewCount` stay at 0 and the stars stay hidden.
+- Reserving stock and writing an order are not one transaction — see
+  [Stock](#stock).
+
+## Catalogue shape
+
+One category today — `ladies-bags`. Nothing in the app hardcodes that: categories
+are read from the database, so adding a second one (from `seed-products.ts`, or
+straight into the `categories` collection) makes the pieces that only make sense
+with a choice appear on their own:
+
+- the homepage's "Shop by category" section, hidden while there is one category
+- the shop page's category pills, hidden for the same reason
+- `ProductImage` picks its tile artwork by category slug, with a neutral
+  fallback for any slug it does not know
+
+Replacing the catalogue wholesale means clearing `products` and `categories`
+first, then `npm run seed` — the seed upserts by id, so old rows outside the new
+set would otherwise be left behind in categories that no longer exist. Orders and
+users are untouched by this: each order stores its own copy of the item names and
+prices, so past orders keep reading correctly even after the catalogue changes.

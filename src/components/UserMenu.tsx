@@ -5,11 +5,10 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { logoutAction } from "@/lib/auth/actions";
 import { useUI } from "@/context/UIContext";
-import type { UserRole } from "@/types";
+import { useSessionUser } from "@/context/SessionContext";
 
-export type SessionSummary = { name: string; role: UserRole } | null;
-
-export function UserMenu({ session }: { session: SessionSummary }) {
+export function UserMenu() {
+  const session = useSessionUser();
   const router = useRouter();
   const { showToast } = useUI();
   const [open, setOpen] = useState(false);

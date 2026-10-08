@@ -102,14 +102,19 @@ export function CartDrawer() {
             </div>
 
             <ul className="flex-1 divide-y divide-line overflow-y-auto px-5">
-              {entries.map(({ product, quantity, lineTotal }) => (
-                <li key={product.id} className="flex gap-3 py-4">
+              {entries.map(({ product, variant, color, quantity, lineTotal }) => (
+                <li key={`${product.id}::${color}`} className="flex gap-3 py-4">
                   <Link
                     href={`/products/${product.slug}`}
                     onClick={closeCart}
                     className="h-20 w-20 shrink-0 overflow-hidden rounded-lg border border-line"
                   >
-                    <ProductImage product={product} iconClass="h-2/5 w-2/5" />
+                    <ProductImage
+                      product={product}
+                      src={variant.image}
+                      alt={color ? `${product.name} in ${color}` : product.name}
+                      iconClass="h-2/5 w-2/5"
+                    />
                   </Link>
 
                   <div className="flex min-w-0 flex-1 flex-col gap-1.5">
@@ -123,8 +128,8 @@ export function CartDrawer() {
                       </Link>
                       <button
                         type="button"
-                        onClick={() => removeItem(product.id)}
-                        aria-label={`Remove ${product.name}`}
+                        onClick={() => removeItem(product.id, color)}
+                        aria-label={`Remove ${product.name}${color ? ` in ${color}` : ""}`}
                         className="-m-1 shrink-0 rounded p-1 text-subtle transition hover:text-rose-600"
                       >
                         <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
@@ -139,11 +144,21 @@ export function CartDrawer() {
                       </button>
                     </div>
 
+                    {color && (
+                      <p className="flex items-center gap-1.5 text-xs text-muted">
+                        <span
+                          className="h-2.5 w-2.5 rounded-full border border-black/15 dark:border-white/20"
+                          style={{ backgroundColor: variant.colorCode || "#d4d4d8" }}
+                        />
+                        {color}
+                      </p>
+                    )}
+
                     <div className="mt-auto flex items-center justify-between gap-2">
                       <QuantityStepper
                         value={quantity}
-                        max={product.stock}
-                        onChange={(next) => setQuantity(product.id, next)}
+                        max={variant.stock}
+                        onChange={(next) => setQuantity(product.id, color, next)}
                       />
                       <span className="text-sm font-semibold tabular-nums">
                         {formatPrice(lineTotal)}
