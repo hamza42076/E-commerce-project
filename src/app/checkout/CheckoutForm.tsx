@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch, type Control } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { TextField, TextAreaField } from "@/components/form/TextField";
 import { useCart } from "@/context/CartContext";
@@ -13,6 +13,40 @@ import { checkoutSchema, type CheckoutValues } from "@/lib/validation";
 import { placeOrderAction } from "@/lib/orders/actions";
 
 export type CheckoutDefaults = { fullName: string; email: string };
+
+/**
+ * Says where the confirmation is actually going, and points out when that is
+ * not the address on the account.
+ *
+ * A mistyped address is accepted by the receiving mail server and only bounces
+ * minutes later, to the shop rather than to the customer — so from the
+ * customer's side the email simply never arrives, with nothing to explain it.
+ * Naming the address while they can still fix it is the only point at which
+ * that is cheap.
+ *
+ * Kept in its own component because subscribing to a field value makes React
+ * Compiler skip memoising whatever does it; better one line than the form.
+ */
+function EmailNotice({
+  control,
+  accountEmail,
+}: {
+  control: Control<CheckoutValues>;
+  accountEmail: string;
+}) {
+  const typed = (useWatch({ control, name: "email" }) ?? "").trim();
+
+  if (!typed || typed.toLowerCase() === accountEmail.toLowerCase()) {
+    return <p className="mt-1.5 text-xs text-muted">The confirmation goes here.</p>;
+  }
+
+  return (
+    <p className="mt-1.5 text-xs text-accent-600 dark:text-accent-400">
+      Confirmation goes to <span className="font-medium">{typed}</span>, not your
+      account address ({accountEmail}). Check the spelling.
+    </p>
+  );
+}
 
 export function CheckoutForm({ defaults }: { defaults: CheckoutDefaults }) {
   const { ready, entries, lines, subtotal, clear } = useCart();
@@ -26,6 +60,7 @@ export function CheckoutForm({ defaults }: { defaults: CheckoutDefaults }) {
   const {
     register,
     handleSubmit,
+    control,
     setError,
     formState: { errors, isSubmitting },
   } = useForm<CheckoutValues>({
@@ -156,14 +191,19 @@ export function CheckoutForm({ defaults }: { defaults: CheckoutDefaults }) {
           />
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <TextField
-              label="Email"
-              type="email"
-              autoComplete="email"
-              placeholder="you@example.com"
-              error={errors.email?.message}
-              {...register("email")}
-            />
+            <div>
+              <TextField
+                label="Email"
+                type="email"
+                autoComplete="email"
+                placeholder="you@example.com"
+                error={errors.email?.message}
+                {...register("email")}
+              />
+              {!errors.email && (
+                <EmailNotice control={control} accountEmail={defaults.email} />
+              )}
+            </div>
             <TextField
               label="Phone"
               type="tel"
