@@ -25,8 +25,11 @@ export default async function AdminProductsPage() {
           {products.map((product) => {
             const stock = totalStock(product);
 
+            // Thumbnail and details stay side by side; the price and the
+            // buttons drop onto their own line when there is no room, which on
+            // a phone there never is.
             return (
-              <li key={product.id} className="flex items-center gap-4 p-4">
+              <li key={product.id} className="flex flex-wrap items-center gap-x-4 gap-y-3 p-4">
                 <Link
                   href={`/products/${product.slug}`}
                   className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-line"
@@ -34,7 +37,7 @@ export default async function AdminProductsPage() {
                   <ProductImage product={product} iconClass="h-2/5 w-2/5" />
                 </Link>
 
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1 basis-40">
                   <Link
                     href={`/products/${product.slug}`}
                     className="line-clamp-1 font-medium transition hover:text-brand-600"
@@ -67,7 +70,7 @@ export default async function AdminProductsPage() {
                   )}
                 </div>
 
-                <span className="shrink-0 text-sm font-semibold tabular-nums">
+                <span className="ml-auto shrink-0 text-sm font-semibold tabular-nums">
                   {formatPrice(product.price)}
                 </span>
 
