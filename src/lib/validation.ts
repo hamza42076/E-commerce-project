@@ -53,12 +53,19 @@ export const checkoutSchema = z.object({
 export type CheckoutValues = z.infer<typeof checkoutSchema>;
 
 /**
- * Either an external URL or a path produced by the upload action. Shared by the
- * variant main image and every additional image.
+ * An image reference: an external URL, or a path to a file this site serves.
+ *
+ * Two local folders are allowed, and they are different things:
+ *   /uploads/…   written at runtime by the upload action. Gitignored, so it
+ *                exists only on the machine that received it.
+ *   /products/…  committed to the repository, so it ships with a deploy.
+ *
+ * Both are matched by an explicit pattern rather than "any path", so a value
+ * like `/../../etc/passwd` or a `javascript:` URL cannot get through.
  */
 const imageRef = z.union([
   z.url("Enter a valid image URL"),
-  z.string().regex(/^\/uploads\/[A-Za-z0-9._-]+$/, "Enter a valid image URL"),
+  z.string().regex(/^\/(uploads|products)\/[A-Za-z0-9._-]+$/, "Enter a valid image URL"),
   z.literal(""),
 ]);
 

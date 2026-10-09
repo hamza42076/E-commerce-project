@@ -55,14 +55,72 @@ To change the hero, replace that file — nothing else needs editing. The store
 name sits over it with two overlays (a brand-teal wash and a left-to-right
 darkener) so the text keeps its contrast whatever photo is behind it.
 
+### Where product images live
+
+Three possible homes, and the difference matters once the site is deployed:
+
+| Location | Written by | In git | Survives a deploy |
+| -------- | ---------- | ------ | ----------------- |
+| Cloudinary | the upload button, when configured | n/a | **yes** |
+| `public/products/` | you, committing a file | yes | **yes** |
+| `public/uploads/` | the upload button, as a fallback | no | **no** |
+
+`public/uploads/` is gitignored because it is meant for user content, not
+source. On a serverless host its filesystem is read-only and thrown away
+between invocations, so anything written there is gone. That is why the upload
+button prefers Cloudinary and logs a warning when it falls back.
+
+A file you want to ship with the code — the catalogue's own photography —
+belongs in `public/products/`, referenced as `/products/name.png`.
+
+### Cloudinary
+
+Configure it and the upload button starts using it; leave it blank and the
+button writes to `public/uploads/` as before, logging a warning.
+
+Either paste the single URL the Cloudinary dashboard shows:
+
+```
+CLOUDINARY_URL=cloudinary://<api_key>:<api_secret>@<cloud_name>
+```
+
+or set the three separately. The combined URL wins if both are present.
+
+```
+CLOUDINARY_CLOUD_NAME=
+CLOUDINARY_API_KEY=
+CLOUDINARY_API_SECRET=
+```
+
+**Delivered images are optimised.** Every returned URL carries
+`f_auto,q_auto`, so Cloudinary converts on the fly to whatever the browser
+accepts at a quality that looks the same. The catalogue photograph goes from a
+2.1 MB PNG to a 176 KB WebP — on mobile data that is the difference between a
+page that opens and one that does not. The original upload is left alone.
+
+Uploads are **signed on the server** (`src/lib/admin/cloudinary.ts`): the API
+secret never reaches the browser. An unsigned preset would be less code but
+would let anyone who learned the cloud name upload into the account.
+
+Cloudinary is not trusted to police what arrives. The admin check, the 5 MB cap,
+the magic-byte sniff and the SVG refusal all run first, exactly as they do for a
+local write — only the destination changes.
+
+The signing routine is checked against Cloudinary's own two documented examples;
+run that check with the other helper tests.
+
+> Deleting a product does not delete its Cloudinary images. They are small and
+> orphaned rather than harmful, but they do accumulate.
+
 ### Product images
 
 The add-product form takes an image two ways: upload a file, or paste a URL.
 Leave both blank and `ProductImage` draws a category illustration instead.
 
-Uploads go to `public/uploads/` through a Server Action
-(`src/lib/admin/upload.ts`) and are stored under a generated UUID filename. The
-action is admin-only and checks, in this order:
+Uploads go through a Server Action (`src/lib/admin/upload.ts`) — to Cloudinary
+when it is configured, otherwise to `public/uploads/` under a generated UUID
+filename. The checks below run before either, and are the same in both cases.
+The action is admin-only and checks, in this order:
 
 - **Size** — 5 MB maximum. `serverActions.bodySizeLimit` in `next.config.ts` is
   set to 6mb because the framework default is 1MB.
@@ -75,13 +133,9 @@ action is admin-only and checks, in this order:
 The stored filename is generated, never taken from the upload, so a crafted
 name cannot escape the directory or overwrite an existing file.
 
-`public/uploads/` is gitignored (except `.gitkeep`) — it is user content, not
-source.
-
-> **Deploying:** this writes to the local filesystem, which works on a normal
-> server or a VPS but not on serverless hosts like Vercel, where the filesystem
-> is read-only and wiped between invocations. Moving to S3, Cloudinary or
-> UploadThing means rewriting only `src/lib/admin/upload.ts`.
+See [Where product images live](#where-product-images-live) for which of the
+three destinations a given file should end up in, and why the local one does
+not survive a deploy.
 
 ## Auth
 
@@ -97,16 +151,27 @@ source.
 - A signed-in non-admin hitting `/admin` is sent to `/`, not shown a 403, so the
   panel's existence is not advertised.
 
-### Demo accounts
+### Making the administrator
 
-Seeded into MongoDB by `npm run seed`, and recreated automatically when running
-without a database. They are listed on the sign-in page. **Remove them before
-going live** — see `src/lib/db/demo-accounts.ts`.
+There are no accounts in the code and none are seeded. A known email and
+password shipped with a repository means every deployment of it starts life
+with a published way in.
 
-| Email                 | Password    | Role     |
-| --------------------- | ----------- | -------- |
-| `admin@smartshop.pk`  | `Admin1234` | admin    |
-| `demo@smartshop.pk`   | `Demo1234`  | customer |
+Customers sign up through the site. The administrator is made from the command
+line, against whichever database `.env.local` points at:
+
+```bash
+npm run admin -- you@example.com "a strong password" "Your Name"
+```
+
+Re-running it for the same email changes that account's password instead of
+creating a second one — so it is also how a forgotten password is reset, since
+the site has no reset flow.
+
+The password is typed by you and hashed on the spot; it is not written to any
+file. **Do not reuse the password of the mailbox the shop sends from.** If this
+database were ever exposed, a password reused there would take the mailbox —
+and every order email with it.
 
 ## Forms
 
@@ -284,7 +349,7 @@ discover which order ids exist.
 ```bash
 TOKEN=$(curl -s -X POST localhost:3000/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"admin@smartshop.pk","password":"Admin1234"}' \
+  -d '{"email":"you@example.com","password":"your password"}' \
   | sed 's/.*"token":"\([^"]*\)".*/\1/')
 
 curl -s localhost:3000/api/orders -H "Authorization: Bearer $TOKEN"

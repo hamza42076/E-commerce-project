@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { LoginForm } from "@/components/auth/LoginForm";
 import { getSession } from "@/lib/auth/session";
-import { DEMO_ACCOUNTS } from "@/lib/db/demo-accounts";
 
 export const metadata: Metadata = {
   title: "Sign in",
@@ -21,19 +20,6 @@ export default async function LoginPage() {
         <Suspense fallback={<div className="skeleton h-72 rounded-xl" aria-hidden="true" />}>
           <LoginForm />
         </Suspense>
-      </div>
-
-      <div className="mt-6 rounded-xl border border-dashed border-line-strong bg-surface-sunken p-3.5">
-        <p className="text-xs font-medium">Demo accounts</p>
-        <ul className="mt-2 space-y-1 text-xs text-muted">
-          {DEMO_ACCOUNTS.map((account) => (
-            <li key={account.email} className="flex flex-wrap gap-x-2">
-              <span className="font-mono">{account.email}</span>
-              <span className="font-mono">{account.password}</span>
-              <span className="text-subtle">({account.role})</span>
-            </li>
-          ))}
-        </ul>
       </div>
     </div>
   );

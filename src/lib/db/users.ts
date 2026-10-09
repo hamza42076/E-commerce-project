@@ -3,30 +3,21 @@ import { randomUUID } from "node:crypto";
 import type { User, UserRecord, UserRole } from "@/types";
 import { usersCollection, type UserDoc } from "./mongo";
 import { shouldUseSeedData } from "./fallback";
-import { DEMO_ACCOUNTS } from "./demo-accounts";
 import { hashPassword } from "@/lib/auth/password";
 
 /**
- * User storage. Without MongoDB these live in a module-level array, which means
- * accounts created in development disappear when the dev server restarts. The
- * two demo accounts below are re-seeded every time so signing in always works.
+ * User storage.
+ *
+ * Without MongoDB accounts live in a module-level array and disappear when the
+ * dev server restarts. There are no pre-made accounts: sign up through the site
+ * to get a customer, and run `npm run admin` against a real database to make an
+ * administrator. Shipping a known email and password with the code would mean
+ * every deployment started life with a published way in.
  */
 
-let memoryUsers: UserRecord[] | null = null;
+const memoryUsers: UserRecord[] = [];
 
-async function memoryStore(): Promise<UserRecord[]> {
-  if (memoryUsers) return memoryUsers;
-
-  memoryUsers = await Promise.all(
-    DEMO_ACCOUNTS.map(async (account) => ({
-      id: `demo-${account.role}`,
-      name: account.name,
-      email: account.email,
-      role: account.role as UserRole,
-      passwordHash: await hashPassword(account.password),
-      createdAt: new Date().toISOString(),
-    })),
-  );
+function memoryStore(): UserRecord[] {
   return memoryUsers;
 }
 
@@ -53,7 +44,7 @@ export async function findUserByEmail(email: string): Promise<UserRecord | null>
   const normalised = email.trim().toLowerCase();
 
   if (shouldUseSeedData()) {
-    const store = await memoryStore();
+    const store = memoryStore();
     return store.find((user) => user.email === normalised) ?? null;
   }
 
@@ -64,7 +55,7 @@ export async function findUserByEmail(email: string): Promise<UserRecord | null>
 
 export async function findUserById(id: string): Promise<User | null> {
   if (shouldUseSeedData()) {
-    const store = await memoryStore();
+    const store = memoryStore();
     const found = store.find((user) => user.id === id);
     return found ? toUser(found) : null;
   }
@@ -97,7 +88,7 @@ export async function createUser(input: CreateUserInput): Promise<User | null> {
   };
 
   if (shouldUseSeedData()) {
-    const store = await memoryStore();
+    const store = memoryStore();
     store.push(record);
     return toUser(record);
   }
@@ -110,7 +101,7 @@ export async function createUser(input: CreateUserInput): Promise<User | null> {
 
 export async function countUsers(): Promise<number> {
   if (shouldUseSeedData()) {
-    const store = await memoryStore();
+    const store = memoryStore();
     return store.length;
   }
   const collection = await usersCollection();

@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getSession } from "@/lib/auth/session";
+import { isCloudinaryConfigured, uploadToCloudinary } from "./cloudinary";
 
 export type UploadResult = { ok: true; url: string } | { ok: false; message: string };
 
@@ -52,6 +53,20 @@ export async function uploadProductImageAction(formData: FormData): Promise<Uplo
   if (!extension) {
     return { ok: false, message: "Only JPG, PNG and WebP images are supported." };
   }
+
+  // Everything above runs whatever the destination is. Cloudinary is not
+  // trusted to police file types or sizes on our behalf.
+  if (isCloudinaryConfigured()) {
+    return uploadToCloudinary(bytes, extension);
+  }
+
+  // No Cloudinary configured: write to the local disk, as before. That works
+  // on a laptop or a VPS, but a serverless host has a read-only, throwaway
+  // filesystem — which is the whole reason Cloudinary is the preferred path.
+  console.warn(
+    "[upload] Cloudinary is not configured — saving to public/uploads instead.\n" +
+      "         Those files are gitignored, so they will not exist on a deploy.",
+  );
 
   // The name is generated, never taken from the upload, so a crafted filename
   // cannot escape the uploads directory or overwrite an existing file.

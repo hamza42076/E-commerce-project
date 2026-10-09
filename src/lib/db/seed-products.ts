@@ -17,8 +17,14 @@ export const seedCategories: Category[] = [{ slug: "ladies-bags", name: "Ladies 
  * uploaded for each one from Admin -> Products -> Edit. Everything else about
  * the colour — the swatch, the stock, the cart line, the order — already works
  * per colour.
+ *
+ * It lives in /public/products rather than /public/uploads because uploads are
+ * gitignored: they exist only on the machine that received them, so a deploy
+ * would have nothing to serve. Anything that is part of the shop itself has to
+ * be committed.
  */
-const RANGE_PHOTO = "/uploads/aeae8afb-165a-454b-9764-b77a31a79478.png";
+const RANGE_PHOTO =
+  "https://res.cloudinary.com/dqr5v3cpa/image/upload/f_auto,q_auto/v1791562953/smartshop/he3rxym5hrfrjohlcaho.png";
 
 function variant(color: string, colorCode: string, stock: number): ProductVariant {
   return { color, colorCode, image: RANGE_PHOTO, images: [], stock };

@@ -5,14 +5,13 @@
  *
  * Safe to re-run: products and categories are upserted by id, so local edits to
  * seed-products.ts are pushed up without duplicating rows. Pass --fresh to drop
- * the collections first.
+ * them first.
+ *
+ * No accounts are created here — see scripts/set-admin.mts.
  */
-import { randomUUID } from "node:crypto";
 import { MongoClient } from "mongodb";
 import { seedCategories, seedProducts } from "../src/lib/db/seed-products.ts";
 import type { CategoryDoc, ProductDoc, UserDoc } from "../src/lib/db/mongo.ts";
-import { DEMO_ACCOUNTS } from "../src/lib/db/demo-accounts.ts";
-import { hashPassword } from "../src/lib/auth/password.ts";
 
 const uri = process.env.MONGODB_URI;
 const dbName = process.env.MONGODB_DB || "smartshop";
@@ -40,10 +39,9 @@ try {
     await Promise.all([
       products.deleteMany({}),
       categories.deleteMany({}),
-      db.collection("users").deleteMany({}),
       db.collection("orders").deleteMany({}),
     ]);
-    console.log("Cleared products, categories, users and orders");
+    console.log("Cleared products, categories and orders");
   }
 
   const categoryResult = await categories.bulkWrite(
@@ -67,22 +65,10 @@ try {
   );
 
   // Demo accounts, so there is a way in as soon as the database is up. Only
-  // inserted when missing — a password changed later is never overwritten.
+  // No accounts are seeded. A known email and password shipped with the code
+  // would mean every deployment starts with a published way in. Customers sign
+  // up through the site; make the administrator with `npm run admin`.
   const users = db.collection<UserDoc>("users");
-  let usersAdded = 0;
-  for (const account of DEMO_ACCOUNTS) {
-    const existing = await users.findOne({ email: account.email });
-    if (existing) continue;
-    await users.insertOne({
-      _id: randomUUID(),
-      name: account.name,
-      email: account.email,
-      role: account.role,
-      passwordHash: await hashPassword(account.password),
-      createdAt: new Date().toISOString(),
-    });
-    usersAdded += 1;
-  }
 
   await Promise.all([
     products.createIndex({ slug: 1 }, { unique: true }),
@@ -108,7 +94,6 @@ try {
     `Products:   ${productResult.upsertedCount} added, ${productResult.modifiedCount} updated`,
   );
   console.log(`Totals:     ${await products.countDocuments()} products, ${await categories.countDocuments()} categories`);
-  console.log(`Users:      ${usersAdded} demo account(s) added`);
   console.log("Indexes ensured on products, users and orders");
 } finally {
   await client.close();
