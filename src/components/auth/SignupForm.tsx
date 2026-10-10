@@ -2,36 +2,62 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useState } from "react";
+import { useForm, useWatch, type Control } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { TextField } from "@/components/form/TextField";
+import { EmailField } from "@/components/form/EmailField";
+import { PasswordField, PasswordRequirements } from "@/components/form/PasswordField";
 import { signupSchema, type SignupValues } from "@/lib/validation";
 import { signupAction } from "@/lib/auth/actions";
 import { useUIStore } from "@/stores/ui";
 import { useAuthStore } from "@/stores/auth";
 
-export function SignupForm({ next }: { next?: string }) {
+export function SignupForm({ next, defaultEmail }: { next?: string; defaultEmail?: string }) {
   const router = useRouter();
-  const loginHref = next ? `/login?next=${encodeURIComponent(next)}` : "/login";
   const showToast = useUIStore((s) => s.showToast);
   const signIn = useAuthStore((s) => s.signIn);
+  const [takenEmail, setTakenEmail] = useState<string | null>(null);
+
+  function withNext(path: string, email?: string): string {
+    const params = new URLSearchParams();
+    if (next) params.set("next", next);
+    if (email) params.set("email", email);
+    const query = params.toString();
+    return query ? `${path}?${query}` : path;
+  }
 
   const {
     register,
     handleSubmit,
     setError,
+    setValue,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<SignupValues>({
     resolver: zodResolver(signupSchema),
     mode: "onBlur",
-    defaultValues: { name: "", email: "", password: "", confirmPassword: "" },
+    defaultValues: {
+      name: "",
+      // Arrives filled in when someone tried to sign in with an address that
+      // has no account, so they do not type it a second time.
+      email: defaultEmail ?? "",
+      password: "",
+      confirmPassword: "",
+    },
   });
 
   async function onSubmit(values: SignupValues) {
+    setTakenEmail(null);
     const result = await signupAction(values);
 
     if (!result.ok) {
-      setError(result.field ?? "root", { message: result.message });
+      if (result.duplicateEmail) {
+        setTakenEmail(values.email);
+        return;
+      }
+
+      setError(result.field ?? "root", { message: result.message }, { shouldFocus: true });
       return;
     }
 
@@ -44,8 +70,39 @@ export function SignupForm({ next }: { next?: string }) {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
+      {takenEmail && (
+        <div
+          role="alert"
+          className="rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-3 text-sm dark:border-amber-900 dark:bg-amber-950/40"
+        >
+          <p className="font-medium text-amber-900 dark:text-amber-200">
+            {takenEmail} already has an account.
+          </p>
+          <p className="mt-1 text-amber-800 dark:text-amber-300/90">
+            Sign in instead, or reset the password if you have forgotten it.
+          </p>
+          <div className="mt-2.5 flex flex-wrap items-center gap-2">
+            <Link
+              href={withNext("/login", takenEmail)}
+              className="inline-flex rounded-lg bg-amber-900 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-amber-800 dark:bg-amber-200 dark:text-amber-950 dark:hover:bg-amber-100"
+            >
+              Sign in
+            </Link>
+            <Link
+              href={withNext("/forgot-password", takenEmail)}
+              className="text-xs text-amber-900 underline underline-offset-2 dark:text-amber-300"
+            >
+              Reset password
+            </Link>
+          </div>
+        </div>
+      )}
+
       {errors.root?.message && (
-        <p className="rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
+        <p
+          role="alert"
+          className="rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300"
+        >
           {errors.root.message}
         </p>
       )}
@@ -58,28 +115,34 @@ export function SignupForm({ next }: { next?: string }) {
         {...register("name")}
       />
 
-      <TextField
+      <EmailField
         label="Email"
-        type="email"
         autoComplete="email"
         placeholder="you@example.com"
+        hint="Order confirmations are sent here."
+        // Also on the element, not just in defaultValues: react-hook-form fills
+        // an uncontrolled input after hydration, so without this the prefilled
+        // address is missing from the server-rendered HTML and absent entirely
+        // if the JavaScript never arrives.
+        defaultValue={defaultEmail ?? ""}
         error={errors.email?.message}
+        onCorrect={(email) => setValue("email", email, { shouldValidate: true })}
         {...register("email")}
       />
 
-      <TextField
-        label="Password"
-        type="password"
-        autoComplete="new-password"
-        placeholder="At least 8 characters"
-        hint="Needs at least one letter and one number."
-        error={errors.password?.message}
-        {...register("password")}
-      />
+      <div>
+        <PasswordField
+          label="Password"
+          autoComplete="new-password"
+          placeholder="At least 8 characters"
+          error={errors.password?.message}
+          {...register("password")}
+        />
+        <PasswordHints control={control} />
+      </div>
 
-      <TextField
+      <PasswordField
         label="Confirm password"
-        type="password"
         autoComplete="new-password"
         placeholder="Type it again"
         error={errors.confirmPassword?.message}
@@ -96,10 +159,20 @@ export function SignupForm({ next }: { next?: string }) {
 
       <p className="text-center text-sm text-muted">
         Already have an account?{" "}
-        <Link href={loginHref} className="font-medium text-brand-600 hover:underline">
+        <Link href={withNext("/login")} className="font-medium text-brand-600 hover:underline">
           Sign in
         </Link>
       </p>
     </form>
   );
+}
+
+/**
+ * The live rule checklist, in its own component so that subscribing to the
+ * password field re-renders three lines of text rather than the whole form on
+ * every keystroke.
+ */
+function PasswordHints({ control }: { control: Control<SignupValues> }) {
+  const value = useWatch({ control, name: "password" });
+  return <PasswordRequirements value={value ?? ""} />;
 }

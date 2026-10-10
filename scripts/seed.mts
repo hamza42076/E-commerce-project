@@ -64,7 +64,6 @@ try {
     })),
   );
 
-  // Demo accounts, so there is a way in as soon as the database is up. Only
   // No accounts are seeded. A known email and password shipped with the code
   // would mean every deployment starts with a published way in. Customers sign
   // up through the site; make the administrator with `npm run admin`.
@@ -85,6 +84,15 @@ try {
     users.createIndex({ email: 1 }, { unique: true }),
     db.collection("orders").createIndex({ createdAt: -1 }),
     db.collection("orders").createIndex({ status: 1 }),
+
+    // Both of these collections are entirely short-lived rows, so each one is
+    // swept by a TTL index on its own expiry instead of accumulating forever.
+    // expireAfterSeconds: 0 means "delete once expiresAt is in the past", which
+    // lets each document carry its own lifetime — an hour for a reset link,
+    // fifteen minutes or an hour for a rate-limit window.
+    db.collection("passwordResets").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+    db.collection("passwordResets").createIndex({ userId: 1 }),
+    db.collection("rateLimits").createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
   ]);
 
   console.log(
@@ -94,7 +102,7 @@ try {
     `Products:   ${productResult.upsertedCount} added, ${productResult.modifiedCount} updated`,
   );
   console.log(`Totals:     ${await products.countDocuments()} products, ${await categories.countDocuments()} categories`);
-  console.log("Indexes ensured on products, users and orders");
+  console.log("Indexes ensured on products, users, orders, passwordResets and rateLimits");
 } finally {
   await client.close();
 }

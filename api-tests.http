@@ -605,3 +605,81 @@ Authorization: Bearer {{customerToken}}
 ### Now check the stock again                             expect 200
 # Navy down by 2, Black down by 1, Cream down by 2, Red untouched at 4.
 GET {{base}}/products/mini-crossbody-bag
+
+
+###############################################################################
+# 10. RATE LIMITING — the sign-in throttle
+#
+# The limits live in src/lib/auth/rate-limit.ts: 8 failures per email and 30
+# per IP, both over 15 minutes. They are shared with the web sign-in form, so
+# posting here is not a way around throttling that form.
+#
+# Use the throwaway address below rather than a real one — nine failures
+# against a real customer locks them out for a quarter of an hour.
+#
+# X-Forwarded-For is what the IP counter reads, so changing it here gives you a
+# clean per-IP counter without waiting for the window to pass.
+###############################################################################
+
+### Failure 1 of 8                                        expect 401
+POST {{base}}/auth/login
+Content-Type: application/json
+X-Forwarded-For: 203.0.113.9
+
+{
+  "email": "nobody-at-all@example.com",
+  "password": "WrongPassword1"
+}
+
+### Send the request above eight times in total, then this one  expect 429
+# The body says how long to wait, and a Retry-After header carries the seconds.
+# Note the message does NOT say whether that address has an account: both
+# counters are spent before the lookup, so a blocked caller learns nothing.
+POST {{base}}/auth/login
+Content-Type: application/json
+X-Forwarded-For: 203.0.113.9
+
+{
+  "email": "nobody-at-all@example.com",
+  "password": "WrongPassword1"
+}
+
+### A different address from the same IP still works       expect 401, not 429
+# The per-email counter is the one that tripped. The per-IP counter allows 30,
+# so this one is answered normally.
+POST {{base}}/auth/login
+Content-Type: application/json
+X-Forwarded-For: 203.0.113.9
+
+{
+  "email": "someone-else@example.com",
+  "password": "WrongPassword1"
+}
+
+### And the right password clears the counter              expect 200
+# Run this after a failure or two against your own account: a success wipes the
+# failures that led to it, so they do not hang over the rest of the window.
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "CUSTOMER-EMAIL-HERE",
+  "password": "CUSTOMER-PASSWORD-HERE"
+}
+
+###############################################################################
+# Password reset has no API endpoint.
+#
+# It is a server action only — src/lib/auth/actions.ts, requestPasswordReset-
+# Action and resetPasswordAction — reached through /forgot-password and
+# /reset-password in the browser. Test it there:
+#
+#   1. /forgot-password with an address that has no account
+#      -> "No account uses this email address yet", with a sign-up button
+#   2. /forgot-password with your own address
+#      -> "Link sent", and the email arrives (check spam)
+#   3. Open the link        -> the form, naming the account
+#   4. Open it again        -> "This link no longer works"
+#   5. Ask for two links, then open the first  -> also dead; only the newest works
+#   6. Wait an hour, then open a link          -> dead
+###############################################################################

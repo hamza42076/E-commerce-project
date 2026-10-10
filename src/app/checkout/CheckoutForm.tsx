@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useForm, useWatch, type Control } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { TextField, TextAreaField } from "@/components/form/TextField";
+import { EmailField } from "@/components/form/EmailField";
 import { useCartStore, useCartEntries, useCartSubtotal } from "@/stores/cart";
 import { useUIStore } from "@/stores/ui";
 import { formatPrice } from "@/lib/format";
@@ -66,6 +67,7 @@ export function CheckoutForm({ defaults }: { defaults: CheckoutDefaults }) {
     handleSubmit,
     control,
     setError,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<CheckoutValues>({
     resolver: zodResolver(checkoutSchema),
@@ -196,12 +198,12 @@ export function CheckoutForm({ defaults }: { defaults: CheckoutDefaults }) {
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <TextField
+              <EmailField
                 label="Email"
-                type="email"
                 autoComplete="email"
                 placeholder="you@example.com"
                 error={errors.email?.message}
+                onCorrect={(email) => setValue("email", email, { shouldValidate: true })}
                 {...register("email")}
               />
               {!errors.email && (

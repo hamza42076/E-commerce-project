@@ -14,6 +14,12 @@ function safeNext(value: string | string[] | undefined): string | undefined {
   return raw;
 }
 
+/** A single plain value, for prefilling a field from the query string. */
+function single(value: string | string[] | undefined): string | undefined {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return raw?.slice(0, 120) || undefined;
+}
+
 export default async function SignupPage({
   searchParams,
 }: {
@@ -21,7 +27,7 @@ export default async function SignupPage({
 }) {
   if (await getSession()) redirect("/");
 
-  const { next } = await searchParams;
+  const { next, email } = await searchParams;
 
   return (
     <div className="animate-fade-up rounded-2xl border border-line bg-surface-raised p-6 shadow-sm sm:p-8">
@@ -29,7 +35,7 @@ export default async function SignupPage({
       <p className="mt-1 text-sm text-muted">It takes about thirty seconds.</p>
 
       <div className="mt-6">
-        <SignupForm next={safeNext(next)} />
+        <SignupForm next={safeNext(next)} defaultEmail={single(email)} />
       </div>
     </div>
   );

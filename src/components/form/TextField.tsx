@@ -11,7 +11,8 @@ type Common = {
 const baseInput =
   "w-full rounded-xl border bg-surface px-3.5 py-2.5 text-sm outline-none transition placeholder:text-subtle focus:ring-4 disabled:opacity-60";
 
-function shellClass(hasError: boolean): string {
+/** Exported so PasswordField looks identical to the fields around it. */
+export function shellClass(hasError: boolean): string {
   return hasError
     ? `${baseInput} border-rose-400 focus:border-rose-500 focus:ring-rose-500/10`
     : `${baseInput} border-line focus:border-brand-500 focus:ring-brand-500/10`;

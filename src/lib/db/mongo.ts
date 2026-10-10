@@ -122,6 +122,48 @@ export async function usersCollection(): Promise<Collection<UserDoc>> {
   return db.collection<UserDoc>("users");
 }
 
+/**
+ * An outstanding password-reset link.
+ *
+ * `_id` is the SHA-256 of the token, never the token itself. The link in the
+ * email is the only copy of the real value, so someone who reads this
+ * collection — a leaked backup, a stray mongosh session — still cannot
+ * construct a working link.
+ */
+export type PasswordResetDoc = {
+  _id: string;
+  userId: string;
+  email: string;
+  createdAt: Date;
+  /** TTL-indexed, so expired links are also deleted from the database. */
+  expiresAt: Date;
+};
+
+export async function passwordResetsCollection(): Promise<Collection<PasswordResetDoc>> {
+  const db = await getDb();
+  return db.collection<PasswordResetDoc>("passwordResets");
+}
+
+/**
+ * One throttled counter — failed sign-ins for an email, reset requests from an
+ * IP, and so on. `_id` is the key being counted.
+ *
+ * In the database rather than in process memory because a deployment runs more
+ * than one instance, and a limit that resets whenever the load balancer picks a
+ * different one is not a limit.
+ */
+export type RateLimitDoc = {
+  _id: string;
+  count: number;
+  /** TTL-indexed: the window ends by the document disappearing. */
+  expiresAt: Date;
+};
+
+export async function rateLimitsCollection(): Promise<Collection<RateLimitDoc>> {
+  const db = await getDb();
+  return db.collection<RateLimitDoc>("rateLimits");
+}
+
 export async function ordersCollection(): Promise<Collection<OrderDoc>> {
   const db = await getDb();
   return db.collection<OrderDoc>("orders");

@@ -5,6 +5,47 @@ import { z } from "zod";
  * actions, so the browser and the server never disagree about what is valid.
  */
 
+/**
+ * What makes a password acceptable, as data.
+ *
+ * The signup form ticks these off live as they are typed, and the schema below
+ * is built from the same list, so the checklist cannot end up promising
+ * something the server then rejects.
+ */
+export const PASSWORD_RULES = [
+  {
+    label: "At least 8 characters",
+    message: "Password must be at least 8 characters",
+    test: (value: string) => value.length >= 8,
+  },
+  {
+    label: "One letter",
+    message: "Include at least one letter",
+    test: (value: string) => /[a-zA-Z]/.test(value),
+  },
+  {
+    label: "One number",
+    message: "Include at least one number",
+    test: (value: string) => /[0-9]/.test(value),
+  },
+] as const;
+
+/**
+ * A new password. 72 characters is the cap because bcrypt-style limits are a
+ * common surprise and there is no reason to let someone set a password that
+ * some later change might silently truncate.
+ */
+const newPassword = z
+  .string()
+  .max(72, "Password is too long")
+  .superRefine((value, ctx) => {
+    for (const rule of PASSWORD_RULES) {
+      if (!rule.test(value)) {
+        ctx.addIssue({ code: "custom", message: rule.message });
+      }
+    }
+  });
+
 export const signupSchema = z
   .object({
     name: z
@@ -13,12 +54,7 @@ export const signupSchema = z
       .min(2, "Name must be at least 2 characters")
       .max(60, "Name is too long"),
     email: z.email("Enter a valid email address").trim().toLowerCase(),
-    password: z
-      .string()
-      .min(8, "Password must be at least 8 characters")
-      .max(72, "Password is too long")
-      .regex(/[a-zA-Z]/, "Include at least one letter")
-      .regex(/[0-9]/, "Include at least one number"),
+    password: newPassword,
     confirmPassword: z.string(),
   })
   .refine((data) => data.password === data.confirmPassword, {
@@ -34,6 +70,27 @@ export const loginSchema = z.object({
 });
 
 export type LoginValues = z.infer<typeof loginSchema>;
+
+/** Asking for a reset link. */
+export const forgotPasswordSchema = z.object({
+  email: z.email("Enter a valid email address").trim().toLowerCase(),
+});
+
+export type ForgotPasswordValues = z.infer<typeof forgotPasswordSchema>;
+
+/** Setting a new password from a link. Same rules as signing up. */
+export const resetPasswordSchema = z
+  .object({
+    token: z.string().min(1, "This link is incomplete"),
+    password: newPassword,
+    confirmPassword: z.string(),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
+  });
+
+export type ResetPasswordValues = z.infer<typeof resetPasswordSchema>;
 
 /** Pakistani mobile numbers, with or without the country code. */
 const phonePattern = /^(?:\+92|0)3\d{9}$/;

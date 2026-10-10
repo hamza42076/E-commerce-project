@@ -490,3 +490,114 @@ export function orderStatusEmail(order: Order): {
 
   return { subject: copy.subject(order.reference), html, text: lines.join("\n") };
 }
+
+/**
+ * The password-reset link.
+ *
+ * Says plainly that nothing has happened yet and that ignoring the message is
+ * safe, because the person reading it may not be the person who asked for it —
+ * a mistyped address on the form sends this to a stranger, and the honest
+ * version of that email is one that does not alarm them.
+ *
+ * The URL appears twice: as a button, and as text underneath. Plenty of mail
+ * clients and corporate gateways mangle or strip the link on a styled button,
+ * and a reset email that cannot be followed is worse than no email.
+ */
+export function passwordResetEmail(input: {
+  name: string;
+  resetUrl: string;
+  expiresMinutes: number;
+}): { subject: string; html: string; text: string } {
+  const subject = "Reset your SmartShop password";
+  const safeUrl = escapeHtml(input.resetUrl);
+  const expiry =
+    input.expiresMinutes >= 60
+      ? `${Math.round(input.expiresMinutes / 60)} hour${input.expiresMinutes >= 120 ? "s" : ""}`
+      : `${input.expiresMinutes} minutes`;
+
+  const html = `<!doctype html>
+<html>
+  <body style="margin:0;padding:0;background:#f6f7fb;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f7fb;padding:24px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid ${LINE};">
+
+            <tr>
+              <td style="background:${BRAND};padding:24px;">
+                <div style="color:#ffffff;font-size:20px;font-weight:600;">SmartShop</div>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:28px 24px 0;">
+                <h1 style="margin:0 0 12px;color:${INK};font-size:22px;font-weight:600;">
+                  Reset your password
+                </h1>
+                <p style="margin:0;color:${MUTED};font-size:14px;line-height:1.6;">
+                  Hi ${escapeHtml(input.name)}, somebody asked to reset the password for this
+                  email address. Choose a new one using the button below.
+                </p>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:24px 24px 0;" align="center">
+                <a href="${safeUrl}"
+                   style="display:inline-block;background:${BRAND};color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;padding:13px 28px;border-radius:8px;">
+                  Choose a new password
+                </a>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:20px 24px 0;">
+                <p style="margin:0;color:${MUTED};font-size:13px;line-height:1.6;">
+                  Or paste this into your browser:
+                </p>
+                <p style="margin:6px 0 0;word-break:break-all;">
+                  <a href="${safeUrl}" style="color:${BRAND};font-size:13px;">${safeUrl}</a>
+                </p>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:22px 24px;">
+                <div style="background:#f6f7fb;border-radius:8px;padding:16px;color:${MUTED};font-size:13px;line-height:1.6;">
+                  This link works once and expires in ${expiry}.
+                  If you did not ask for it, you can ignore this email —
+                  your password has not been changed.
+                </div>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="background:#f6f7fb;padding:16px 24px;color:${MUTED};font-size:12px;text-align:center;">
+                SmartShop &middot; We will never ask you for your password by email
+              </td>
+            </tr>
+
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+
+  const text = [
+    `RESET YOUR PASSWORD`,
+    ``,
+    `Hi ${input.name}, somebody asked to reset the password for this email`,
+    `address. Open the link below to choose a new one:`,
+    ``,
+    `  ${input.resetUrl}`,
+    ``,
+    `This link works once and expires in ${expiry}.`,
+    `If you did not ask for it, ignore this email — your password has not`,
+    `been changed.`,
+    ``,
+    `SmartShop — we will never ask you for your password by email.`,
+  ].join("\n");
+
+  return { subject, html, text };
+}

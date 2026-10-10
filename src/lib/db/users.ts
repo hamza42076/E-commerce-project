@@ -99,6 +99,27 @@ export async function createUser(input: CreateUserInput): Promise<User | null> {
   return toUser(record);
 }
 
+/**
+ * Replaces the stored password hash. Returns false if the account has gone.
+ *
+ * Takes the plain password and hashes it here, so no caller has to know how
+ * hashing works and none can store something unhashed by mistake.
+ */
+export async function updateUserPassword(userId: string, password: string): Promise<boolean> {
+  const passwordHash = await hashPassword(password);
+
+  if (shouldUseSeedData()) {
+    const found = memoryStore().find((user) => user.id === userId);
+    if (!found) return false;
+    found.passwordHash = passwordHash;
+    return true;
+  }
+
+  const collection = await usersCollection();
+  const result = await collection.updateOne({ _id: userId }, { $set: { passwordHash } });
+  return result.matchedCount === 1;
+}
+
 export async function countUsers(): Promise<number> {
   if (shouldUseSeedData()) {
     const store = memoryStore();

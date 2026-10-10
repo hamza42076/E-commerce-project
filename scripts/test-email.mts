@@ -13,6 +13,7 @@ import {
   newOrderOwnerEmail,
   orderConfirmationEmail,
   orderStatusEmail,
+  passwordResetEmail,
 } from "../src/lib/email/templates.ts";
 import type { Order, OrderStatus } from "../src/types/index.ts";
 
@@ -77,6 +78,16 @@ for (const { status, mail } of statusMails) {
   console.log(`${status.padEnd(9)}: ${mail.subject}`);
   console.log(`           -> email-preview-status-${status}.html`);
 }
+
+// The reset email is not about an order, so it gets its own sample.
+const reset = passwordResetEmail({
+  name: "Ayesha Khan",
+  resetUrl: "http://localhost:3000/reset-password?token=PREVIEW-TOKEN-NOT-REAL",
+  expiresMinutes: 60,
+});
+await writeFile("email-preview-reset.html", reset.html);
+console.log("Reset    : " + reset.subject);
+console.log("           -> email-preview-reset.html");
 
 console.log("\nOpen those files in a browser to see how they look.");
 

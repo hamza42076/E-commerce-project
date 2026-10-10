@@ -23,6 +23,8 @@ The app also runs with no database at all — see [Without a database](#without-
 | `/checkout`        | Delivery details form, places the order, shows the reference             |
 | `/login`           | Sign in                                                                  |
 | `/signup`          | Create an account                                                        |
+| `/forgot-password` | Asks for a reset link by email                                           |
+| `/reset-password`  | Sets a new password from the link in that email                          |
 | `/admin`           | Revenue, order counts, recent orders — **admin role only**               |
 | `/admin/orders`    | Every order with customer details and the colour ordered; status inline  |
 | `/admin/products`  | Product list with edit and delete, plus the add-product form             |
@@ -187,6 +189,81 @@ not survive a deploy.
 - A signed-in non-admin hitting `/admin` is sent to `/`, not shown a 403, so the
   panel's existence is not advertised.
 
+### The sign-in form names the reason, and is rate limited for it
+
+The form says "no account uses this email address yet" when the address is
+unknown, and "that password is not correct" when it is not. The usual advice is
+one message for both, so the form cannot be asked which addresses have
+accounts.
+
+That was the wrong trade for this shop. Almost every failed sign-in here is a
+first-time visitor who has not registered, or somebody who typed their address
+wrong — and a single message leaves both of them guessing which half to change.
+A real customer who cannot get in does not try harder; they leave.
+
+What makes the honest message affordable is `src/lib/auth/rate-limit.ts`:
+
+| Counter                | Limit               | Window |
+| ---------------------- | ------------------- | ------ |
+| Failed sign-ins per email | 8                | 15 min |
+| Failed sign-ins per IP    | 30               | 15 min |
+| Reset requests per email  | 3                | 1 hour |
+| Reset requests per IP     | 12               | 1 hour |
+
+Eight answers is plenty for someone who has forgotten which address they used,
+and useless for harvesting a customer list. Both counters are consumed *before*
+the account is looked up, so a caller who is already blocked learns nothing at
+all. A successful sign-in clears the counter, so getting it right on the fifth
+try does not leave four failures hanging over the rest of the window.
+
+The counters live in MongoDB with a TTL index, not in process memory — a
+deployment runs more than one instance, and a limit that resets when the load
+balancer picks a different one is not a limit. `POST /api/auth/login` shares
+the same counters, so throttling the form is not something a caller can step
+around by posting to the API instead. That endpoint keeps the single generic
+message: an API client has nobody to be kind to.
+
+The per-IP limit is deliberately the looser of the two. A household, an office
+and a mobile network all share one address, and `x-forwarded-for` is a request
+header that anyone can write anything in, so it is a sorting key rather than an
+identity.
+
+### Password reset
+
+`/forgot-password` emails a link; `/reset-password` spends it. Specifics worth
+knowing, in `src/lib/db/password-resets.ts`:
+
+- The link is 32 random bytes, and what the database stores is its SHA-256.
+  Reading the collection tells you that somebody asked for a reset, not how to
+  complete one.
+- It is **not** one of the signed tokens from `src/lib/auth/token.ts`. Those
+  carry their own validity, which is exactly wrong here: a reset link has to
+  stop working the moment it is used, and nothing self-contained can be
+  withdrawn. So there is a row, and it is deleted on use.
+- Single use and one hour. Spending it is a `findOneAndDelete`, so two requests
+  arriving together cannot both succeed. Asking for a second link kills the
+  first.
+- The page checks the link on load without spending it, so a stale link says so
+  before anybody picks a password and types it twice.
+- A successful reset signs them in. Reading the link proves they hold the
+  mailbox, which is what the password proves too.
+- Reset requests get the same honest answer about unknown addresses as sign-in,
+  for the same reason — a typo would otherwise leave somebody watching an inbox
+  for a message that was never coming.
+- If the email fails to send, the link is withdrawn and the failure is reported.
+  A live token for a message nobody received is pointless risk.
+
+The link's host comes from `NEXT_PUBLIC_SITE_URL`, or Vercel's own environment,
+and in production never from the request's `Host` header — see
+`src/lib/site-url.ts`. A reset email is the one place where trusting that header
+would matter: `Host: attacker.example` would send a real token for a real
+account, to its real owner, pointed at somebody else's server.
+
+One honest limitation: sessions are stateless, so changing a password does not
+invalidate a session already signed in elsewhere. It stays valid until it
+expires, at most a week. Fixing that properly means a token version on the user
+record, checked on every request.
+
 ### Making the administrator
 
 There are no accounts in the code and none are seeded. A known email and
@@ -201,8 +278,8 @@ npm run admin -- you@example.com "a strong password" "Your Name"
 ```
 
 Re-running it for the same email changes that account's password instead of
-creating a second one — so it is also how a forgotten password is reset, since
-the site has no reset flow.
+creating a second one, which is the way back in if the administrator's own
+mailbox is the one that is unreachable.
 
 The password is typed by you and hashed on the spot; it is not written to any
 file. **Do not reuse the password of the mailbox the shop sends from.** If this
@@ -219,6 +296,35 @@ counts.
 
 Checkout never trusts prices from the browser: the action takes only product ids
 and quantities, then re-prices from the catalogue and re-checks stock.
+
+### Field components that exist for a reason
+
+- **`EmailField`** (`src/components/form/EmailField.tsx`) suggests a correction
+  when the domain looks mistyped — `@gmial.com`, `@gmail.con`, `@yahooo.com`.
+  This exists because of four real bounced orders: the address on them was
+  `coodinakakeera@gmail.com` instead of `coodingkakeera@gmail.com`, typed the
+  same way four times. Nothing rejected it, because it is a perfectly valid
+  address; the confirmation simply went nowhere, and from the customer's side
+  the shop just never wrote back. Used on sign-in, sign-up, reset and checkout.
+
+  The check runs on blur, not per keystroke — mid-typing, `gmail.c` looks like a
+  typo of `gmail.com`. Accepting is always a choice: `@gmail.com.pk` is a real
+  domain and a guess that overruled the person typing would be worse than the
+  typo.
+
+- **`PasswordField`** reveals what was typed, and warns when Caps Lock is on.
+  Both failures look identical in a field of dots: a password typed correctly,
+  rejected, with nothing to explain why.
+
+- **`PasswordRequirements`** ticks the rules off as they are met. The rules are
+  `PASSWORD_RULES` in `src/lib/validation.ts` and the zod schema is built from
+  that same list, so the checklist cannot promise something the server refuses.
+
+- Failures focus the field that needs fixing (`shouldFocus`), which matters most
+  on a phone where the red text can be below the fold. Where there is something
+  better to offer than "no", the form offers it: an unknown address on sign-in
+  gets a **Create an account** button with the address carried over, and an
+  address already taken on sign-up gets **Sign in** and **Reset password**.
 
 ## The product contract
 
