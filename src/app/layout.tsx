@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { CartProvider } from "@/context/CartContext";
-import { UIProvider } from "@/context/UIContext";
-import { SessionProvider } from "@/context/SessionContext";
+import { StoreHydrator } from "@/components/StoreHydrator";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 import { CartDrawer } from "@/components/CartDrawer";
@@ -40,23 +38,21 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">
-        <SessionProvider
+        {/* No providers: state lives in zustand stores, which components
+            import directly. This only pushes in what the server knows. */}
+        <StoreHydrator
+          catalogue={catalogue}
           user={
             session
               ? { name: session.name, email: session.email, role: session.role }
               : null
           }
-        >
-          <CartProvider catalogue={catalogue}>
-            <UIProvider>
-              <Navbar />
-              <main className="flex-1">{children}</main>
-              <Footer />
-              <CartDrawer />
-              <Toaster />
-            </UIProvider>
-          </CartProvider>
-        </SessionProvider>
+        />
+        <Navbar />
+        <main className="flex-1">{children}</main>
+        <Footer />
+        <CartDrawer />
+        <Toaster />
       </body>
     </html>
   );

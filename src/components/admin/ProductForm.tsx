@@ -12,7 +12,7 @@ import {
   type ProductFormValues,
 } from "@/lib/validation";
 import { createProductAction, updateProductAction } from "@/lib/admin/actions";
-import { useUI } from "@/context/UIContext";
+import { useUIStore } from "@/stores/ui";
 import type { Category, Product } from "@/types";
 
 /**
@@ -93,7 +93,7 @@ export function ProductForm({
   product?: Product;
 }) {
   const router = useRouter();
-  const { showToast } = useUI();
+  const showToast = useUIStore((s) => s.showToast);
   const editing = product !== undefined;
 
   const {

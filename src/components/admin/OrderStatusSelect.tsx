@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { updateOrderStatusAction } from "@/lib/admin/actions";
-import { useUI } from "@/context/UIContext";
+import { useUIStore } from "@/stores/ui";
 import type { OrderStatus } from "@/types";
 
 const OPTIONS: OrderStatus[] = ["pending", "shipped", "delivered", "cancelled"];
@@ -16,7 +16,7 @@ export function OrderStatusSelect({
   status: OrderStatus;
 }) {
   const router = useRouter();
-  const { showToast } = useUI();
+  const showToast = useUIStore((s) => s.showToast);
   const [pending, startTransition] = useTransition();
   // Shown immediately so the select does not snap back while the action runs.
   const [optimistic, setOptimistic] = useState(status);

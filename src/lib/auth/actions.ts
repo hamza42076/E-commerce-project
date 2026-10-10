@@ -4,10 +4,18 @@ import { loginSchema, signupSchema } from "@/lib/validation";
 import { createUser, findUserByEmail, toUser } from "@/lib/db/users";
 import { verifyPassword } from "./password";
 import { createSession, destroySession } from "./session";
-import type { UserRole } from "@/types";
+import { payloadFor, signToken } from "./token";
+import type { User, UserRole } from "@/types";
 
 export type AuthResult =
-  | { ok: true; role: UserRole }
+  | {
+      ok: true;
+      role: UserRole;
+      /** For the client store. The cookie set alongside is what authorises. */
+      user: { name: string; email: string; role: UserRole };
+      /** Bearer token, for calling the JSON API from the browser. */
+      token: string;
+    }
   | { ok: false; message: string; field?: "email" | "password" | "name" };
 
 /**
@@ -30,7 +38,7 @@ export async function signupAction(values: unknown): Promise<AuthResult> {
   }
 
   await createSession(user);
-  return { ok: true, role: user.role };
+  return succeed(user);
 }
 
 export async function loginAction(values: unknown): Promise<AuthResult> {
@@ -56,7 +64,21 @@ export async function loginAction(values: unknown): Promise<AuthResult> {
 
   const user = toUser(record);
   await createSession(user);
-  return { ok: true, role: user.role };
+  return succeed(user);
+}
+
+/**
+ * The cookie is set separately by createSession and is the thing that
+ * actually authorises. These two come back so the client store can show who is
+ * signed in without a round trip, and hold a token for the JSON API.
+ */
+function succeed(user: User): AuthResult {
+  return {
+    ok: true,
+    role: user.role,
+    user: { name: user.name, email: user.email, role: user.role },
+    token: signToken(payloadFor(user)),
+  };
 }
 
 export async function logoutAction(): Promise<void> {

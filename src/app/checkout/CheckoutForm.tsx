@@ -5,8 +5,8 @@ import { useState } from "react";
 import { useForm, useWatch, type Control } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { TextField, TextAreaField } from "@/components/form/TextField";
-import { useCart } from "@/context/CartContext";
-import { useUI } from "@/context/UIContext";
+import { useCartStore, useCartEntries, useCartSubtotal } from "@/stores/cart";
+import { useUIStore } from "@/stores/ui";
 import { formatPrice } from "@/lib/format";
 import { deliveryFeeFor } from "@/lib/shipping";
 import { checkoutSchema, type CheckoutValues } from "@/lib/validation";
@@ -49,8 +49,12 @@ function EmailNotice({
 }
 
 export function CheckoutForm({ defaults }: { defaults: CheckoutDefaults }) {
-  const { ready, entries, lines, subtotal, clear } = useCart();
-  const { showToast } = useUI();
+  const ready = useCartStore((s) => s.hydrated);
+  const lines = useCartStore((s) => s.lines);
+  const clear = useCartStore((s) => s.clear);
+  const entries = useCartEntries();
+  const subtotal = useCartSubtotal();
+  const showToast = useUIStore((s) => s.showToast);
   const [placed, setPlaced] = useState<{
     reference: string;
     total: number;

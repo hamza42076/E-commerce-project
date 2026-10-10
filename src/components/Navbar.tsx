@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useCart } from "@/context/CartContext";
-import { useUI } from "@/context/UIContext";
+import { useCartStore, useCartCount } from "@/stores/cart";
+import { useUIStore } from "@/stores/ui";
 import { UserMenu } from "./UserMenu";
 
 // Category links are not listed here: with one category there is nothing to
@@ -16,8 +16,9 @@ const LINKS = [
 ];
 
 export function Navbar() {
-  const { itemCount, ready } = useCart();
-  const { openCart } = useUI();
+  const itemCount = useCartCount();
+  const ready = useCartStore((s) => s.hydrated);
+  const openCart = useUIStore((s) => s.openCart);
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);

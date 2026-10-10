@@ -3,12 +3,18 @@
 import Link from "next/link";
 import { ProductImage } from "@/components/ProductImage";
 import { QuantityStepper } from "@/components/QuantityStepper";
-import { useCart } from "@/context/CartContext";
+import { useCartStore, useCartEntries, useCartSubtotal, useCartCount } from "@/stores/cart";
 import { formatPrice } from "@/lib/format";
 import { DELIVERY_FEE, FREE_DELIVERY_THRESHOLD, deliveryFeeFor } from "@/lib/shipping";
 
 export default function CartPage() {
-  const { ready, entries, subtotal, itemCount, setQuantity, removeItem, clear } = useCart();
+  const ready = useCartStore((s) => s.hydrated);
+  const setQuantity = useCartStore((s) => s.setQuantity);
+  const removeItem = useCartStore((s) => s.removeItem);
+  const clear = useCartStore((s) => s.clear);
+  const entries = useCartEntries();
+  const subtotal = useCartSubtotal();
+  const itemCount = useCartCount();
 
   if (!ready) {
     return (

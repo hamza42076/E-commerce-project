@@ -3,11 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { deleteProductAction } from "@/lib/admin/actions";
-import { useUI } from "@/context/UIContext";
+import { useUIStore } from "@/stores/ui";
 
 export function DeleteProductButton({ id, name }: { id: string; name: string }) {
   const router = useRouter();
-  const { showToast } = useUI();
+  const showToast = useUIStore((s) => s.showToast);
   const [confirming, setConfirming] = useState(false);
   const [pending, startTransition] = useTransition();
 

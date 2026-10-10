@@ -1,16 +1,42 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
 import { ProductImage } from "./ProductImage";
 import { QuantityStepper } from "./QuantityStepper";
-import { useCart } from "@/context/CartContext";
-import { useUI } from "@/context/UIContext";
+import { useCartStore, useCartEntries, useCartSubtotal, useCartCount } from "@/stores/cart";
+import { useUIStore } from "@/stores/ui";
 import { formatPrice } from "@/lib/format";
 import { FREE_DELIVERY_THRESHOLD } from "@/lib/shipping";
 
 export function CartDrawer() {
-  const { cartOpen, closeCart } = useUI();
-  const { entries, subtotal, itemCount, setQuantity, removeItem } = useCart();
+  const cartOpen = useUIStore((s) => s.cartOpen);
+  const closeCart = useUIStore((s) => s.closeCart);
+  const setQuantity = useCartStore((s) => s.setQuantity);
+  const removeItem = useCartStore((s) => s.removeItem);
+  const entries = useCartEntries();
+  const subtotal = useCartSubtotal();
+  const itemCount = useCartCount();
+
+  // Escape closes it, and the page behind stops scrolling while it is open.
+  // This lives here rather than in the store because it touches the document,
+  // and the drawer is the only thing that cares.
+  useEffect(() => {
+    if (!cartOpen) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeCart();
+    };
+    document.addEventListener("keydown", onKeyDown);
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [cartOpen, closeCart]);
 
   if (!cartOpen) return null;
 

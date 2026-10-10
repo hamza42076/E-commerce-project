@@ -2,9 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { useCart } from "@/context/CartContext";
-import { useUI } from "@/context/UIContext";
-import { useIsSignedIn } from "@/context/SessionContext";
+import { useCartStore } from "@/stores/cart";
+import { useUIStore } from "@/stores/ui";
+import { useIsSignedIn } from "@/stores/auth";
 import { findVariant } from "@/lib/products/variants";
 import type { Product } from "@/types";
 
@@ -23,8 +23,9 @@ export function AddToCartButton({
   revealCart?: boolean;
   className?: string;
 }) {
-  const { addItem } = useCart();
-  const { showToast, openCart } = useUI();
+  const addItem = useCartStore((s) => s.addItem);
+  const showToast = useUIStore((s) => s.showToast);
+  const openCart = useUIStore((s) => s.openCart);
   const signedIn = useIsSignedIn();
   const router = useRouter();
   const [justAdded, setJustAdded] = useState(false);

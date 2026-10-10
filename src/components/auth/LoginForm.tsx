@@ -7,12 +7,14 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { TextField } from "@/components/form/TextField";
 import { loginSchema, type LoginValues } from "@/lib/validation";
 import { loginAction } from "@/lib/auth/actions";
-import { useUI } from "@/context/UIContext";
+import { useUIStore } from "@/stores/ui";
+import { useAuthStore } from "@/stores/auth";
 
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { showToast } = useUI();
+  const showToast = useUIStore((s) => s.showToast);
+  const signIn = useAuthStore((s) => s.signIn);
 
   // Only same-site paths. Without this, /login?next=https://evil.com would
   // hand the visitor straight to someone else's site after a real sign-in.
@@ -43,6 +45,8 @@ export function LoginForm() {
       return;
     }
 
+    // Into the store, which persists it to localStorage until sign-out.
+    signIn(result.user, result.token);
     showToast("Signed in", "Welcome back");
     router.push(next ?? (result.role === "admin" ? "/admin" : "/"));
     router.refresh();

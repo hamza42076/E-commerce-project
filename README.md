@@ -28,6 +28,42 @@ The app also runs with no database at all — see [Without a database](#without-
 | `/admin/products`  | Product list with edit and delete, plus the add-product form             |
 | `/admin/products/[slug]/edit` | The same form, pre-filled — add, remove and re-stock colours  |
 
+## Client state
+
+Three zustand stores in `src/stores/`, imported directly by the components that
+need them. There are no context providers wrapping the tree.
+
+| Store | Holds | In localStorage |
+| ----- | ----- | --------------- |
+| `auth` | signed-in user, API token | yes, until sign-out |
+| `cart` | lines, and the catalogue they resolve against | lines only |
+| `ui` | cart drawer, toasts | no |
+
+`StoreHydrator`, rendered once in the root layout, pushes in the two things
+only the server knows: the catalogue, and who the session cookie says is signed
+in.
+
+**The auth store does not authorise anything.** Every page guard and every
+server action reads the httpOnly session cookie, because a server component
+cannot see localStorage and a value the browser can write is not evidence.
+Editing `role` in devtools changes what the menu shows and nothing else;
+`/admin` still refuses you. If the cookie has expired, the next page load
+clears the store to match.
+
+That cookie is also where the security sits: script injected into the page
+cannot read an httpOnly cookie, but it can read localStorage. The token kept
+there is a convenience for calling the JSON API from the browser, not the thing
+protecting the account — and it is worth knowing that an XSS would hand it over.
+
+Carts written before the stores existed (`cart:v1`, `cart:v2`) are read once,
+merged in, and removed, so nobody loses what they left in their basket. The old
+keys are cleared even when there is nothing to carry over — left behind, they
+would reappear the next time somebody emptied their cart.
+
+Only `{ productId, color, quantity }` is stored. Names, prices and stock come
+from the catalogue on every request, so a price change or a withdrawn colour
+shows up immediately instead of a stale copy living on in a browser.
+
 ## Theme
 
 Two colours, everything else is neutral:

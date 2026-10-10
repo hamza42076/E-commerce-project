@@ -7,12 +7,14 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { TextField } from "@/components/form/TextField";
 import { signupSchema, type SignupValues } from "@/lib/validation";
 import { signupAction } from "@/lib/auth/actions";
-import { useUI } from "@/context/UIContext";
+import { useUIStore } from "@/stores/ui";
+import { useAuthStore } from "@/stores/auth";
 
 export function SignupForm({ next }: { next?: string }) {
   const router = useRouter();
   const loginHref = next ? `/login?next=${encodeURIComponent(next)}` : "/login";
-  const { showToast } = useUI();
+  const showToast = useUIStore((s) => s.showToast);
+  const signIn = useAuthStore((s) => s.signIn);
 
   const {
     register,
@@ -33,6 +35,7 @@ export function SignupForm({ next }: { next?: string }) {
       return;
     }
 
+    signIn(result.user, result.token);
     showToast("Account created", "You are signed in");
     // Back to whatever they were looking at before signing up.
     router.push(next ?? "/");

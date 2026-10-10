@@ -4,13 +4,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { logoutAction } from "@/lib/auth/actions";
-import { useUI } from "@/context/UIContext";
-import { useSessionUser } from "@/context/SessionContext";
+import { useUIStore } from "@/stores/ui";
+import { useAuthUser, useAuthStore } from "@/stores/auth";
 
 export function UserMenu() {
-  const session = useSessionUser();
+  const session = useAuthUser();
   const router = useRouter();
-  const { showToast } = useUI();
+  const showToast = useUIStore((s) => s.showToast);
+  const signOutStore = useAuthStore((s) => s.signOut);
   const [open, setOpen] = useState(false);
   const wrapper = useRef<HTMLDivElement>(null);
 
@@ -52,7 +53,9 @@ export function UserMenu() {
 
   async function handleLogout() {
     setOpen(false);
+    // Cookie server-side, store and localStorage here.
     await logoutAction();
+    signOutStore();
     showToast("Signed out");
     router.push("/");
     router.refresh();

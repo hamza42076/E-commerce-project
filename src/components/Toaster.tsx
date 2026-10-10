@@ -1,9 +1,10 @@
 "use client";
 
-import { useUI } from "@/context/UIContext";
+import { useUIStore } from "@/stores/ui";
 
 export function Toaster() {
-  const { toasts, dismissToast } = useUI();
+  const toasts = useUIStore((s) => s.toasts);
+  const dismissToast = useUIStore((s) => s.dismissToast);
 
   if (toasts.length === 0) return null;
 
