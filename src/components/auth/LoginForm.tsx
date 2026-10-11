@@ -114,12 +114,22 @@ export function LoginForm() {
       )}
 
       {notice?.kind === "locked" && (
-        <p
+        <div
           role="alert"
           className="rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300"
         >
-          {notice.message}
-        </p>
+          <p>{notice.message}</p>
+          {/* The message suggests a reset, so it had better offer one. */}
+          <button
+            type="button"
+            onClick={() =>
+              router.push(withNext("/forgot-password", getValues("email") || undefined))
+            }
+            className="mt-1.5 font-medium underline underline-offset-2"
+          >
+            Reset my password
+          </button>
+        </div>
       )}
 
       {errors.root?.message && (
@@ -141,33 +151,32 @@ export function LoginForm() {
         {...register("email")}
       />
 
-      <div>
-        <PasswordField
-          label="Password"
-          autoComplete="current-password"
-          placeholder="Your password"
-          error={errors.password?.message}
-          {...register("password")}
-        />
-        <p className="mt-1.5 text-right">
-          {/*
-            A button rather than a Link because the address has to be read at
-            the moment of the click. Putting getValues() in the href would
-            freeze whatever was there when this rendered — which is nothing —
-            and subscribing to the field just to keep a href fresh would
-            re-render the form on every keystroke.
-          */}
+      <PasswordField
+        label="Password"
+        autoComplete="current-password"
+        placeholder="Your password"
+        error={errors.password?.message}
+        // On the label row, opposite "Password", which is where people look
+        // for it. Under the field it read as a footnote and went unnoticed.
+        //
+        // A button rather than a Link because the address has to be read at
+        // the moment of the click. Putting getValues() in an href would freeze
+        // whatever was there when this rendered — which is nothing — and
+        // subscribing to the field just to keep a href fresh would re-render
+        // the form on every keystroke.
+        action={
           <button
             type="button"
             onClick={() =>
               router.push(withNext("/forgot-password", getValues("email") || undefined))
             }
-            className="text-xs text-muted underline underline-offset-2 hover:text-brand-600"
+            className="text-sm font-medium text-brand-600 hover:underline"
           >
-            Forgot your password?
+            Forgot password?
           </button>
-        </p>
-      </div>
+        }
+        {...register("password")}
+      />
 
       <button
         type="submit"

@@ -1,6 +1,13 @@
 "use client";
 
-import { useId, useState, type InputHTMLAttributes, type KeyboardEvent, type Ref } from "react";
+import {
+  useId,
+  useState,
+  type InputHTMLAttributes,
+  type KeyboardEvent,
+  type ReactNode,
+  type Ref,
+} from "react";
 import { shellClass } from "./TextField";
 import { PASSWORD_RULES } from "@/lib/validation";
 
@@ -19,6 +26,7 @@ export function PasswordField({
   label,
   error,
   hint,
+  action,
   id,
   ref,
   onKeyUp,
@@ -27,6 +35,11 @@ export function PasswordField({
   label: string;
   error?: string;
   hint?: string;
+  /**
+   * Sits on the label row, opposite the label — where a "Forgot password?"
+   * link belongs. Below the field it reads as a footnote and gets missed.
+   */
+  action?: ReactNode;
   ref?: Ref<HTMLInputElement>;
 } & InputHTMLAttributes<HTMLInputElement>) {
   const [visible, setVisible] = useState(false);
@@ -48,9 +61,12 @@ export function PasswordField({
 
   return (
     <div>
-      <label htmlFor={fieldId} className="mb-1.5 block text-sm font-medium">
-        {label}
-      </label>
+      <div className="mb-1.5 flex items-baseline justify-between gap-3">
+        <label htmlFor={fieldId} className="block text-sm font-medium">
+          {label}
+        </label>
+        {action}
+      </div>
 
       <div className="relative">
         <input
