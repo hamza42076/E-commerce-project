@@ -41,6 +41,14 @@ export type Product = {
   /** Optional ribbon, e.g. "New", "Bestseller". */
   badge?: string | null;
   /**
+   * One optional video of the product, shown in the gallery behind a play
+   * button. On the product rather than on a variant: a single clip showing the
+   * bag being handled tells you about every colour of it.
+   *
+   * Empty or absent means no video, and the gallery simply does not offer one.
+   */
+  video?: string;
+  /**
    * Colours this product comes in. Empty for products created before variants
    * existed — those fall back to `image` and `stock` below. Read it through
    * `src/lib/products/variants.ts` rather than branching at each call site.

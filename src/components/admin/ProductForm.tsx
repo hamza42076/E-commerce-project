@@ -1,10 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useForm, useWatch, type Control } from "react-hook-form";
+import { Controller, useForm, useWatch, type Control } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { SelectField, TextAreaField, TextField } from "@/components/form/TextField";
 import { VariantFields } from "./VariantFields";
+import { VideoPicker } from "./ImagePicker";
 import {
   PRODUCT_BADGES,
   productSchema,
@@ -52,6 +53,7 @@ function defaultsFor(product: Product | undefined, categories: Category[]): Prod
       material: "",
       strapType: "",
       badge: "",
+      video: "",
       featured: false,
       variants: [BLANK_VARIANT],
     };
@@ -67,6 +69,7 @@ function defaultsFor(product: Product | undefined, categories: Category[]): Prod
     material: product.material ?? "",
     strapType: product.strapType ?? "",
     badge: (product.badge ?? "") as ProductFormValues["badge"],
+    video: product.video ?? "",
     featured: product.featured ?? false,
     // A product created before variants existed has none. Seed the form with
     // its old image and stock as a single unnamed colour, which the admin can
@@ -270,6 +273,23 @@ export function ProductForm({
             </option>
           ))}
         </SelectField>
+
+        {/*
+          Controller rather than register: VideoPicker holds a URL it produces
+          itself from an upload, so it needs a value and an onChange rather
+          than a ref onto an input.
+        */}
+        <Controller
+          control={control}
+          name="video"
+          render={({ field, fieldState }) => (
+            <VideoPicker
+              value={field.value ?? ""}
+              onChange={field.onChange}
+              error={fieldState.error?.message}
+            />
+          )}
+        />
 
         <label className="flex items-center gap-2.5 text-sm">
           <input

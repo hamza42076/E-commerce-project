@@ -126,6 +126,20 @@ const imageRef = z.union([
   z.literal(""),
 ]);
 
+/**
+ * A product video. Same two shapes as an image — a hosted URL, or a file this
+ * site serves — and empty for the usual case of a product without one.
+ *
+ * Matched by an explicit pattern rather than "any path" for the same reason as
+ * `imageRef`: this value ends up in a `src` attribute, so `javascript:` and
+ * `../..` must not be able to get through.
+ */
+const videoRef = z.union([
+  z.url("Enter a valid video URL"),
+  z.string().regex(/^\/uploads\/[A-Za-z0-9._-]+$/, "Enter a valid video URL"),
+  z.literal(""),
+]);
+
 /** Badges the shop can put on a product. Empty string means none. */
 export const PRODUCT_BADGES = ["New", "Bestseller", "Trending", "Premium", "Sale"] as const;
 
@@ -183,6 +197,7 @@ export const productSchema = z
     material: z.string().trim().max(120, "Too long").optional(),
     strapType: z.string().trim().max(120, "Too long").optional(),
     badge: z.union([z.enum(PRODUCT_BADGES), z.literal("")]).optional(),
+    video: videoRef.optional(),
     featured: z.boolean().optional(),
     variants: z
       .array(variantSchema)

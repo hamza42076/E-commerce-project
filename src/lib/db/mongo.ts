@@ -54,6 +54,8 @@ export type ProductDoc = {
   material?: string;
   strapType?: string;
   badge?: string | null;
+  /** Absent on every product written before videos existed. */
+  video?: string;
   variants?: ProductVariant[];
   /** Pre-variant image. Kept so older products keep rendering. */
   image: string;

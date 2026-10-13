@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ChangeEvent } from "react";
-import { uploadProductImageAction } from "@/lib/admin/upload";
+import { uploadProductImageAction, uploadProductVideoAction } from "@/lib/admin/upload";
 
 /**
  * Uploads through the existing server action, which is the thing that actually
@@ -213,6 +213,123 @@ export function ExtraImagesPicker({
       </label>
 
       {failure && <p className="mt-1.5 text-xs text-rose-600 dark:text-rose-400">{failure}</p>}
+    </div>
+  );
+}
+
+/**
+ * One optional video for the whole product.
+ *
+ * Uploading is slower than an image and gives no progress to show — Cloudinary
+ * has to read and probe the file before it answers — so the button says what
+ * it is doing and stays disabled until it is done. Without that, a 20 MB clip
+ * looks like nothing happening and gets clicked again.
+ */
+export function VideoPicker({
+  value,
+  onChange,
+  error,
+}: {
+  value: string;
+  onChange: (url: string) => void;
+  error?: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [fileKey, setFileKey] = useState(0);
+
+  async function handleFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setFailure(null);
+    setBusy(true);
+
+    const body = new FormData();
+    body.append("file", file);
+    const result = await uploadProductVideoAction(body);
+
+    setBusy(false);
+    setFileKey((key) => key + 1);
+
+    if (!result.ok) {
+      setFailure(result.message);
+      return;
+    }
+    onChange(result.url);
+  }
+
+  const showPreview = value.startsWith("http") || value.startsWith("/uploads/");
+
+  return (
+    <div>
+      <span className="mb-1.5 block text-sm font-medium">
+        Product video <span className="font-normal text-subtle">(optional)</span>
+      </span>
+
+      <div className="flex items-start gap-3">
+        {showPreview && (
+          <video
+            src={value}
+            // Metadata only: loading the whole clip to draw a 64px box would
+            // cost the admin a download every time this form opens.
+            preload="metadata"
+            muted
+            playsInline
+            className="h-16 w-16 shrink-0 rounded-lg border border-line bg-surface-sunken object-cover"
+          />
+        )}
+
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <label
+            className={`flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-line-strong px-3 py-2 text-center text-xs transition hover:border-brand-400 hover:bg-surface-sunken ${
+              busy ? "pointer-events-none opacity-60" : ""
+            }`}
+          >
+            {busy ? "Uploading video, this can take a moment..." : value ? "Replace video" : "Choose video"}
+            <input
+              key={fileKey}
+              type="file"
+              accept="video/mp4,video/quicktime,video/webm"
+              onChange={handleFile}
+              disabled={busy}
+              className="sr-only"
+            />
+          </label>
+
+          <input
+            type="url"
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            placeholder="…or paste a video URL"
+            aria-label="Product video URL"
+            className="w-full rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs outline-none transition placeholder:text-subtle focus:border-brand-500"
+          />
+
+          {value && (
+            <button
+              type="button"
+              onClick={() => {
+                onChange("");
+                setFailure(null);
+              }}
+              className="text-xs text-rose-600 underline-offset-2 hover:underline dark:text-rose-400"
+            >
+              Remove video
+            </button>
+          )}
+        </div>
+      </div>
+
+      {(failure || error) && (
+        <p className="mt-1.5 text-xs text-rose-600 dark:text-rose-400">{failure ?? error}</p>
+      )}
+      {!failure && !error && (
+        <p className="mt-1.5 text-xs text-subtle">
+          MP4, MOV or WebM, up to 50 MB. Shown in the gallery behind a play button —
+          leave it empty and the product simply has no video.
+        </p>
+      )}
     </div>
   );
 }

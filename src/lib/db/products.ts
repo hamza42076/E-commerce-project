@@ -22,6 +22,7 @@ export type ProductInput = {
   material?: string;
   strapType?: string;
   badge?: string | null;
+  video?: string;
   featured: boolean;
   variants: ProductVariant[];
 };
@@ -283,6 +284,7 @@ function toDocFields(product: Product): Omit<ProductDoc, "_id"> {
     material: product.material,
     strapType: product.strapType,
     badge: product.badge,
+    video: product.video,
     variants: product.variants,
     image: product.image,
     stock: product.stock,

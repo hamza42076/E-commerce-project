@@ -8,6 +8,7 @@ import { AddToCartButton } from "@/components/AddToCartButton";
 import { ColorSwatches } from "./ColorSwatches";
 import { discountPercent, formatPrice } from "@/lib/format";
 import { defaultVariant, galleryFor, hasVariants } from "@/lib/products/variants";
+import { hasVideo, videoPoster } from "@/lib/products/video";
 import type { Product } from "@/types";
 
 /**
@@ -22,6 +23,15 @@ export function ProductDetail({ product }: { product: Product }) {
   const [color, setColor] = useState(() => defaultVariant(product).color);
   const [quantity, setQuantity] = useState(1);
   const [imageIndex, setImageIndex] = useState(0);
+  /**
+   * Whether the main square is showing the video instead of a photo.
+   *
+   * Kept apart from `imageIndex` rather than folded in as one more gallery
+   * slot: the video belongs to the product and the photos belong to the
+   * colour, so a single index would have to mean two different things
+   * depending on where it pointed.
+   */
+  const [playing, setPlaying] = useState(false);
 
   const variant =
     product.variants.find((entry) => entry.color === color) ?? defaultVariant(product);
@@ -34,11 +44,19 @@ export function ProductDetail({ product }: { product: Product }) {
   const soldOut = variant.stock < 1;
   const multiColour = product.variants.length > 1;
 
+  const video = hasVideo(product.video) ? product.video : null;
+  // Falls back to the colour's own photo when the video is hosted somewhere
+  // Cloudinary cannot render a frame from.
+  const poster = video ? (videoPoster(video) ?? variant.image) : null;
+
   function chooseColor(next: string) {
     setColor(next);
     // The new colour has its own pictures, so start at its first one rather than
     // holding an index that pointed into the old colour's gallery.
     setImageIndex(0);
+    // Switching colour is a request to look at that colour, so the video steps
+    // out of the way.
+    setPlaying(false);
     // And its own stock, which may be lower than what was already selected.
     const nextStock =
       product.variants.find((entry) => entry.color === next)?.stock ?? 0;
@@ -50,12 +68,53 @@ export function ProductDetail({ product }: { product: Product }) {
       {/* Gallery */}
       <div>
         <div className="relative aspect-square overflow-hidden rounded-3xl border border-line">
-          <ProductImage
-            product={product}
-            src={gallery[imageIndex] ?? variant.image}
-            alt={variant.color ? `${product.name} in ${variant.color}` : product.name}
-            iconClass="h-2/5 w-2/5"
-          />
+          {playing && video ? (
+            <video
+              // Keyed by URL so swapping products in a client transition gives
+              // a fresh element rather than a player still holding the old file.
+              key={video}
+              src={video}
+              poster={poster ?? undefined}
+              controls
+              // Safe to start on its own *because* this element only exists
+              // after a click on "Watch video" — nothing plays on page load.
+              // The click is also the user gesture browsers require before
+              // they will allow sound.
+              autoPlay
+              // Keeps iOS playing it in place rather than seizing the screen.
+              playsInline
+              preload="metadata"
+              className="h-full w-full bg-black object-contain"
+            >
+              Your browser cannot play this video.
+            </video>
+          ) : (
+            <ProductImage
+              product={product}
+              src={gallery[imageIndex] ?? variant.image}
+              alt={variant.color ? `${product.name} in ${variant.color}` : product.name}
+              iconClass="h-2/5 w-2/5"
+            />
+          )}
+
+          {/*
+            A second way in, for the majority who never look at a thumbnail
+            strip. Hidden while the video is open so it cannot cover the
+            player's own controls.
+          */}
+          {video && !playing && (
+            <button
+              type="button"
+              onClick={() => setPlaying(true)}
+              className="group absolute inset-0 flex items-center justify-center focus-visible:outline-none"
+              aria-label="Play the product video"
+            >
+              <span className="flex items-center gap-2 rounded-full bg-black/55 px-4 py-2.5 text-sm font-medium text-white backdrop-blur-sm transition group-hover:bg-black/70 group-focus-visible:ring-4 group-focus-visible:ring-white/40">
+                <PlayIcon className="h-4 w-4" />
+                Watch video
+              </span>
+            </button>
+          )}
 
           <div className="absolute left-4 top-4 flex flex-col items-start gap-2">
             {discount !== null && (
@@ -71,30 +130,68 @@ export function ProductDetail({ product }: { product: Product }) {
           </div>
         </div>
 
-        {gallery.length > 1 && (
-          <ul className="mt-3 flex gap-2.5">
-            {gallery.map((src, index) => (
-              <li key={`${src}-${index}`}>
+        {/*
+          A single photo needs no strip, but a single photo plus a video does —
+          otherwise there is no way back to the picture once the video opens.
+        */}
+        {(gallery.length > 1 || video) && (
+          <ul className="mt-3 flex flex-wrap gap-2.5">
+            {gallery.map((src, index) => {
+              const current = index === imageIndex && !playing;
+              return (
+                <li key={`${src}-${index}`}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImageIndex(index);
+                      setPlaying(false);
+                    }}
+                    aria-label={`Image ${index + 1} of ${gallery.length}`}
+                    aria-current={current}
+                    className={`h-16 w-16 overflow-hidden rounded-xl border transition ${
+                      current
+                        ? "border-brand-600 ring-2 ring-brand-500/30"
+                        : "border-line hover:border-brand-400"
+                    }`}
+                  >
+                    <ProductImage
+                      product={product}
+                      src={src}
+                      alt=""
+                      iconClass="h-2/5 w-2/5"
+                    />
+                  </button>
+                </li>
+              );
+            })}
+
+            {video && (
+              <li>
                 <button
                   type="button"
-                  onClick={() => setImageIndex(index)}
-                  aria-label={`Image ${index + 1} of ${gallery.length}`}
-                  aria-current={index === imageIndex}
-                  className={`h-16 w-16 overflow-hidden rounded-xl border transition ${
-                    index === imageIndex
+                  onClick={() => setPlaying(true)}
+                  aria-label="Play the product video"
+                  aria-current={playing}
+                  className={`relative h-16 w-16 overflow-hidden rounded-xl border transition ${
+                    playing
                       ? "border-brand-600 ring-2 ring-brand-500/30"
                       : "border-line hover:border-brand-400"
                   }`}
                 >
-                  <ProductImage
-                    product={product}
-                    src={src}
-                    alt=""
-                    iconClass="h-2/5 w-2/5"
-                  />
+                  {poster ? (
+                    // The still frame, not the video file: a <video> here would
+                    // make the browser fetch part of the clip to draw a 64px box.
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={poster} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="block h-full w-full bg-surface-sunken" />
+                  )}
+                  <span className="absolute inset-0 flex items-center justify-center bg-black/35">
+                    <PlayIcon className="h-5 w-5 text-white drop-shadow" />
+                  </span>
                 </button>
               </li>
-            ))}
+            )}
           </ul>
         )}
       </div>
@@ -209,5 +306,14 @@ export function ProductDetail({ product }: { product: Product }) {
         </dl>
       </div>
     </div>
+  );
+}
+
+/** Solid triangle, nudged right so it reads as centred inside a circle. */
+function PlayIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
+      <path d="M8 5.14v13.72a1 1 0 0 0 1.52.85l11.14-6.86a1 1 0 0 0 0-1.7L9.52 4.29A1 1 0 0 0 8 5.14Z" />
+    </svg>
   );
 }

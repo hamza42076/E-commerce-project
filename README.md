@@ -111,6 +111,44 @@ button prefers Cloudinary and logs a warning when it falls back.
 A file you want to ship with the code — the catalogue's own photography —
 belongs in `public/products/`, referenced as `/products/name.png`.
 
+### Product video
+
+A product may carry **one optional video**, uploaded the same way as an image.
+Products without one are unchanged — no player, no empty space, nothing in the
+gallery strip.
+
+It sits on the product rather than on a colour: one clip of the bag being
+handled tells you about every colour of it, and asking for six near-identical
+videos would mean most products never get one.
+
+Where it shows, in `ProductDetail.tsx`:
+
+- A **Watch video** button over the main image, for the majority who never
+  look at a thumbnail strip.
+- A **thumbnail with a play badge** at the end of the strip, so there is a way
+  back to the photos once it is open.
+
+Nothing plays on page load. The `<video>` element is only mounted once
+something has been clicked, which is also the user gesture browsers require
+before they will allow sound.
+
+The thumbnail is a still frame, not the video: `videoPoster()` in
+`src/lib/products/video.ts` rewrites the Cloudinary URL to ask for the frame
+one second in as a JPEG — frame zero on a phone clip is usually a blur before
+the camera has settled. A video hosted anywhere else gets no poster rather than
+a guessed URL that would render as a broken image.
+
+| | Images | Video |
+| --- | --- | --- |
+| Accepted | JPG, PNG, WebP | MP4, MOV, WebM |
+| Size limit | 5 MB | 50 MB |
+| Cloudinary endpoint | `image/upload` | `video/upload` |
+| Checked by | leading bytes, never the filename | leading bytes, never the filename |
+
+Uploading a video is noticeably slower than an image — Cloudinary reads and
+probes the file before it answers — so the admin button says so and stays
+disabled until it is done.
+
 ### Cloudinary
 
 Configure it and the upload button starts using it; leave it blank and the

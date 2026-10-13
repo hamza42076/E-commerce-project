@@ -43,6 +43,8 @@ function toProductInput(values: ProductValues): ProductInput {
     material: values.material?.trim() || undefined,
     strapType: values.strapType?.trim() || undefined,
     badge: values.badge ? values.badge : null,
+    // An empty field means no video, stored as absent rather than as "".
+    video: values.video?.trim() || undefined,
     featured: values.featured ?? false,
     variants: values.variants.map((variant) => {
       // The main image belongs at the front of the gallery, once.
