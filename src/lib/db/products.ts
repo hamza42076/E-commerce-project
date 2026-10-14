@@ -150,10 +150,19 @@ export async function getProducts(query: ProductQuery = {}): Promise<Product[]> 
 }
 
 export async function getFeaturedProducts(limit = 4): Promise<Product[]> {
-  if (shouldUseSeedData()) return seedProducts.filter((p) => p.featured).slice(0, limit);
+  if (shouldUseSeedData()) {
+    return seedProducts
+      .filter((p) => p.featured)
+      .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""))
+      .slice(0, limit);
+  }
 
   const collection = await productsCollection();
-  const docs = await collection.find({ featured: true }).limit(limit).toArray();
+  const docs = await collection
+    .find({ featured: true })
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .toArray();
   return docs.map(toProduct);
 }
 
