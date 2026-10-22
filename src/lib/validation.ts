@@ -104,6 +104,9 @@ export const checkoutSchema = z.object({
     .regex(phonePattern, "Enter a valid number, e.g. 03001234567"),
   address: z.string().trim().min(10, "Enter the full street address").max(200, "Too long"),
   city: z.string().trim().min(2, "Enter your city").max(60, "Too long"),
+  area: z.string().trim().max(80, "Area is too long").optional(),
+  province: z.string().trim().max(80, "Province is too long").optional(),
+  postalCode: z.string().trim().max(20, "Postal code is too long").optional(),
   notes: z.string().trim().max(300, "Keep notes under 300 characters").optional(),
 });
 

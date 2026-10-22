@@ -41,7 +41,7 @@ export async function GET(request: Request): Promise<Response> {
  * 409 -> a product with that name (and so that slug) already exists
  */
 export async function POST(request: Request): Promise<Response> {
-  const payload = getBearerUser(request);
+  const payload = await getBearerUser(request);
   if (!payload) return unauthorized();
   if (payload.role !== "admin") return forbidden();
 

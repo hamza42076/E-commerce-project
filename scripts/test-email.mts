@@ -51,8 +51,19 @@ const sampleOrder: Order = {
   subtotal: 17597,
   delivery: 0,
   total: 17597,
+  paymentMethod: "cod",
+  paymentStatus: "pending",
   status: "pending",
   createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+  statusHistory: [
+    {
+      status: "pending",
+      at: new Date().toISOString(),
+      actorId: "preview",
+      actorRole: "customer",
+    },
+  ],
 };
 
 const customer = orderConfirmationEmail(sampleOrder);
@@ -67,7 +78,14 @@ console.log("Owner    : " + owner.subject);
 console.log("           -> email-preview-owner.html");
 
 // One preview per status, so all four tones can be eyeballed side by side.
-const STATUSES: OrderStatus[] = ["pending", "shipped", "delivered", "cancelled"];
+const STATUSES: OrderStatus[] = [
+  "pending",
+  "confirmed",
+  "processing",
+  "shipped",
+  "delivered",
+  "cancelled",
+];
 const statusMails = STATUSES.map((status) => {
   const mail = orderStatusEmail({ ...sampleOrder, status });
   return { status, mail };

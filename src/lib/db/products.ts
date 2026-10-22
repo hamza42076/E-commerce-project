@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import type { Filter, Sort } from "mongodb";
+import type { ClientSession, Filter, Sort } from "mongodb";
 import type { Category, Product, ProductQuery, ProductVariant } from "@/types";
 import { categoriesCollection, productsCollection, type ProductDoc } from "./mongo";
 import { shouldUseSeedData } from "./fallback";
@@ -174,15 +174,21 @@ export async function getProductBySlug(slug: string): Promise<Product | null> {
   return doc ? toProduct(doc) : null;
 }
 
-export async function getProductById(id: string): Promise<Product | null> {
+export async function getProductById(
+  id: string,
+  session?: ClientSession,
+): Promise<Product | null> {
   if (shouldUseSeedData()) return seedProducts.find((p) => p.id === id) ?? null;
 
   const collection = await productsCollection();
-  const doc = await collection.findOne({ _id: id });
+  const doc = await collection.findOne({ _id: id }, { session });
   return doc ? toProduct(doc) : null;
 }
 
-export async function getProductsByIds(ids: string[]): Promise<Product[]> {
+export async function getProductsByIds(
+  ids: string[],
+  session?: ClientSession,
+): Promise<Product[]> {
   if (ids.length === 0) return [];
   if (shouldUseSeedData()) {
     const wanted = new Set(ids);
@@ -190,7 +196,7 @@ export async function getProductsByIds(ids: string[]): Promise<Product[]> {
   }
 
   const collection = await productsCollection();
-  const docs = await collection.find({ _id: { $in: ids } }).toArray();
+  const docs = await collection.find({ _id: { $in: ids } }, { session }).toArray();
   return docs.map(toProduct);
 }
 
@@ -395,6 +401,7 @@ export async function decrementVariantStock(
   productId: string,
   color: string,
   quantity: number,
+  session?: ClientSession,
 ): Promise<boolean> {
   if (shouldUseSeedData()) {
     const product = seedProducts.find((p) => p.id === productId);
@@ -420,6 +427,7 @@ export async function decrementVariantStock(
     const result = await collection.updateOne(
       { _id: productId, stock: { $gte: quantity } },
       { $inc: { stock: -quantity } },
+      { session },
     );
     return result.modifiedCount > 0;
   }
@@ -430,6 +438,7 @@ export async function decrementVariantStock(
       variants: { $elemMatch: { color, stock: { $gte: quantity } } },
     },
     { $inc: { "variants.$.stock": -quantity, stock: -quantity } },
+    { session },
   );
   return result.modifiedCount > 0;
 }
@@ -443,30 +452,38 @@ export async function restoreVariantStock(
   productId: string,
   color: string,
   quantity: number,
-): Promise<void> {
+  session?: ClientSession,
+): Promise<boolean> {
   if (shouldUseSeedData()) {
     const product = seedProducts.find((p) => p.id === productId);
-    if (!product) return;
+    if (!product) return false;
 
     if (product.variants.length === 0) {
       product.stock += quantity;
-      return;
+      return true;
     }
     const variant = product.variants.find((v) => v.color === color);
-    if (variant) variant.stock += quantity;
+    if (!variant) return false;
+    variant.stock += quantity;
     product.stock = product.variants.reduce((sum, v) => sum + v.stock, 0);
-    return;
+    return true;
   }
 
   const collection = await productsCollection();
 
   if (color === "") {
-    await collection.updateOne({ _id: productId }, { $inc: { stock: quantity } });
-    return;
+    const result = await collection.updateOne(
+      { _id: productId },
+      { $inc: { stock: quantity } },
+      { session },
+    );
+    return result.modifiedCount === 1;
   }
 
-  await collection.updateOne(
+  const result = await collection.updateOne(
     { _id: productId, "variants.color": color },
     { $inc: { "variants.$.stock": quantity, stock: quantity } },
+    { session },
   );
+  return result.modifiedCount === 1;
 }

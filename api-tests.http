@@ -337,6 +337,7 @@ Content-Type: application/json
 # @name newOrder
 ### Place an order as the customer                        expect 201
 POST {{base}}/orders
+Idempotency-Key: {{$guid}}
 Content-Type: application/json
 Authorization: Bearer {{customerToken}}
 
@@ -358,6 +359,7 @@ Authorization: Bearer {{customerToken}}
 
 ### Bad phone number                                      expect 422
 POST {{base}}/orders
+Idempotency-Key: {{$guid}}
 Content-Type: application/json
 Authorization: Bearer {{customerToken}}
 
@@ -374,6 +376,7 @@ Authorization: Bearer {{customerToken}}
 
 ### Out of stock colour (p-008 Black has 0)               expect 422
 POST {{base}}/orders
+Idempotency-Key: {{$guid}}
 Content-Type: application/json
 Authorization: Bearer {{customerToken}}
 
@@ -390,6 +393,7 @@ Authorization: Bearer {{customerToken}}
 
 ### Empty cart                                            expect 422
 POST {{base}}/orders
+Idempotency-Key: {{$guid}}
 Content-Type: application/json
 Authorization: Bearer {{customerToken}}
 
@@ -451,6 +455,20 @@ Authorization: Bearer {{adminToken}}
 
 { "status": "teleported" }
 
+### Admin confirms the order                              expect 200
+PATCH {{base}}/orders/{{orderId}}
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{ "status": "confirmed" }
+
+### Admin moves it to processing                          expect 200
+PATCH {{base}}/orders/{{orderId}}
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{ "status": "processing" }
+
 ### Admin marks it shipped                                expect 200
 PATCH {{base}}/orders/{{orderId}}
 Content-Type: application/json
@@ -472,6 +490,7 @@ Authorization: Bearer {{adminToken}}
 # @name emailOrder
 ### Place an order to experiment with                     expect 201
 POST {{base}}/orders
+Idempotency-Key: {{$guid}}
 Content-Type: application/json
 Authorization: Bearer {{customerToken}}
 
@@ -489,6 +508,20 @@ Authorization: Bearer {{customerToken}}
 ###
 @emailOrderId = {{emailOrder.response.body.data.order.id}}
 
+
+### Mark it confirmed             expect 200, customerEmailed true
+PATCH {{base}}/orders/{{emailOrderId}}
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{ "status": "confirmed" }
+
+### Mark it processing            expect 200, customerEmailed true
+PATCH {{base}}/orders/{{emailOrderId}}
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{ "status": "processing" }
 
 ### Mark it shipped               expect 200, customerEmailed true
 PATCH {{base}}/orders/{{emailOrderId}}
@@ -511,8 +544,52 @@ Authorization: Bearer {{adminToken}}
 
 { "status": "delivered" }
 
-### Mark it cancelled             expect 200, customerEmailed true
+### Record COD collection         expect 200
 PATCH {{base}}/orders/{{emailOrderId}}
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{ "paymentStatus": "paid" }
+
+### Cannot cancel a shipped order expect 409
+PATCH {{base}}/orders/{{emailOrderId}}
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{ "status": "cancelled" }
+
+
+# Create and cancel a pending COD order; retry must not restore stock twice.
+# @name cancelOrder
+### Create a pending order to test cancellation         expect 201
+POST {{base}}/orders
+Idempotency-Key: {{$guid}}
+Content-Type: application/json
+Authorization: Bearer {{customerToken}}
+
+{
+  "details": {
+    "fullName": "Cancellation Test",
+    "email": "CUSTOMER-EMAIL-HERE",
+    "phone": "03001234567",
+    "address": "House 5, Street 8, Johar Town",
+    "city": "Lahore"
+  },
+  "items": [{ "productId": "p-003", "color": "Black", "quantity": 1 }]
+}
+
+###
+@cancelOrderId = {{cancelOrder.response.body.data.order.id}}
+
+### Cancel the pending order         expect 200
+PATCH {{base}}/orders/{{cancelOrderId}}
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{ "status": "cancelled" }
+
+### Repeating cancellation is safe expect 200, no second restock
+PATCH {{base}}/orders/{{cancelOrderId}}
 Content-Type: application/json
 Authorization: Bearer {{adminToken}}
 
@@ -532,6 +609,7 @@ GET {{base}}/products/mini-crossbody-bag
 
 ### A colour that does not exist                          expect 422
 POST {{base}}/orders
+Idempotency-Key: {{$guid}}
 Content-Type: application/json
 Authorization: Bearer {{customerToken}}
 
@@ -548,6 +626,7 @@ Authorization: Bearer {{customerToken}}
 
 ### More than that colour has                             expect 422
 POST {{base}}/orders
+Idempotency-Key: {{$guid}}
 Content-Type: application/json
 Authorization: Bearer {{customerToken}}
 
@@ -567,6 +646,7 @@ Authorization: Bearer {{customerToken}}
 # price from the catalogue, not 1 — the body only picks product, colour and
 # quantity.
 POST {{base}}/orders
+Idempotency-Key: {{$guid}}
 Content-Type: application/json
 Authorization: Bearer {{customerToken}}
 
@@ -585,6 +665,7 @@ Authorization: Bearer {{customerToken}}
 # The response must contain two items, each with its own colour — not one item
 # with a quantity of three.
 POST {{base}}/orders
+Idempotency-Key: {{$guid}}
 Content-Type: application/json
 Authorization: Bearer {{customerToken}}
 

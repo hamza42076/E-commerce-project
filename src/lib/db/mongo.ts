@@ -1,5 +1,13 @@
 import { MongoClient, type Collection, type Db } from "mongodb";
-import type { OrderItem, OrderStatus, ProductVariant, UserRole } from "@/types";
+import type {
+  OrderItem,
+  OrderStatus,
+  OrderStatusChange,
+  PaymentMethod,
+  PaymentStatus,
+  ProductVariant,
+  UserRole,
+} from "@/types";
 
 /**
  * A single MongoClient is reused for the whole process. In development Next.js
@@ -17,7 +25,7 @@ export function isConfigured(): boolean {
   return Boolean(process.env.MONGODB_URI);
 }
 
-function getClient(): Promise<MongoClient> {
+export function getMongoClient(): Promise<MongoClient> {
   const uri = process.env.MONGODB_URI;
   if (!uri) {
     throw new Error(
@@ -30,7 +38,7 @@ function getClient(): Promise<MongoClient> {
 }
 
 export async function getDb(): Promise<Db> {
-  const client = await getClient();
+  const client = await getMongoClient();
   return client.db(process.env.MONGODB_DB || DEFAULT_DB_NAME);
 }
 
@@ -86,6 +94,7 @@ export type UserDoc = {
   email: string;
   role: UserRole;
   passwordHash: string;
+  disabled?: boolean;
   createdAt: string;
 };
 
@@ -109,13 +118,24 @@ export type OrderDoc = {
   phone: string;
   address: string;
   city: string;
+  area?: string;
+  province?: string;
+  postalCode?: string;
   notes?: string;
   items: StoredOrderItem[];
   subtotal: number;
   delivery: number;
   total: number;
+  paymentMethod?: PaymentMethod;
+  paymentStatus?: PaymentStatus;
+  paidAt?: string;
+  paidBy?: string;
   status: OrderStatus;
+  statusHistory?: OrderStatusChange[];
+  idempotencyKey?: string;
+  inventoryRestoredAt?: string;
   createdAt: string;
+  updatedAt?: string;
   userId?: string;
 };
 

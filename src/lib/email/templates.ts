@@ -127,7 +127,11 @@ export function orderConfirmationEmail(order: Order): {
                   <div style="color:${INK};font-size:14px;line-height:1.6;">
                     ${escapeHtml(order.customerName)}<br />
                     ${escapeHtml(order.address)}<br />
-                    ${escapeHtml(order.city)}<br />
+                    ${escapeHtml(
+                      [order.area, order.city, order.province, order.postalCode]
+                        .filter(Boolean)
+                        .join(", "),
+                    )}<br />
                     ${escapeHtml(order.phone)}
                   </div>
                   ${
@@ -179,7 +183,7 @@ export function orderConfirmationEmail(order: Order): {
     `DELIVERING TO`,
     `  ${order.customerName}`,
     `  ${order.address}`,
-    `  ${order.city}`,
+    `  ${[order.area, order.city, order.province, order.postalCode].filter(Boolean).join(", ")}`,
     `  ${order.phone}`,
     ...(order.notes ? [`  Notes: ${order.notes}`] : []),
     ``,
@@ -346,6 +350,20 @@ const STATUS_COPY: Record<OrderStatus, StatusCopy> = {
     stripe: "#f59e0b",
     showTotal: true,
   },
+  confirmed: {
+    subject: (r) => `Order ${r} confirmed — SmartShop`,
+    heading: "Your order is confirmed",
+    body: "We have confirmed your order and will begin preparing it for dispatch.",
+    stripe: "#4f46e5",
+    showTotal: true,
+  },
+  processing: {
+    subject: (r) => `Order ${r} is being packed — SmartShop`,
+    heading: "Your order is being packed",
+    body: "Your order is being prepared. We will let you know when it is on the way.",
+    stripe: "#7c3aed",
+    showTotal: true,
+  },
   shipped: {
     subject: (r) => `Order ${r} is on the way — SmartShop`,
     heading: "Your order is on the way",
@@ -445,7 +463,11 @@ export function orderStatusEmail(order: Order): {
                   <div style="color:${INK};font-size:14px;line-height:1.6;">
                     ${escapeHtml(order.customerName)}<br />
                     ${escapeHtml(order.address)}<br />
-                    ${escapeHtml(order.city)}<br />
+                    ${escapeHtml(
+                      [order.area, order.city, order.province, order.postalCode]
+                        .filter(Boolean)
+                        .join(", "),
+                    )}<br />
                     ${escapeHtml(order.phone)}
                   </div>
                 </div>
@@ -482,7 +504,7 @@ export function orderStatusEmail(order: Order): {
     `DELIVERY ADDRESS`,
     `  ${order.customerName}`,
     `  ${order.address}`,
-    `  ${order.city}`,
+    `  ${[order.area, order.city, order.province, order.postalCode].filter(Boolean).join(", ")}`,
     `  ${order.phone}`,
     ``,
     `SmartShop — prices in PKR, free delivery over Rs 5,000.`,

@@ -13,7 +13,7 @@ import { notFound, ok, unauthorized } from "@/lib/api/response";
  * or a deleted account takes effect immediately instead of at token expiry.
  */
 export async function GET(request: Request): Promise<Response> {
-  const payload = getBearerUser(request);
+  const payload = await getBearerUser(request);
   if (!payload) return unauthorized();
 
   const user = await findUserById(payload.userId);

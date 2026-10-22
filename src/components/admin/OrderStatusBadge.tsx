@@ -11,6 +11,14 @@ const STYLES: Record<OrderStatus, { label: string; className: string }> = {
     className:
       "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300",
   },
+  confirmed: {
+    label: "Confirmed",
+    className: "bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300",
+  },
+  processing: {
+    label: "Processing",
+    className: "bg-violet-100 text-violet-800 dark:bg-violet-950/60 dark:text-violet-300",
+  },
   shipped: {
     label: "Shipped",
     className: "bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300",

@@ -1,43 +1,92 @@
 /**
  * Creates the shop's admin account, or changes its password.
  *
- *   npm run admin -- beelaal2024@gmail.com "a strong password" "Your Name"
+ *   npm run admin -- beelaal2024@gmail.com "Your Name"
  *
- * The password is typed by you and hashed here; it is never written to a file
- * and never sent anywhere. Pick one used for nothing else — in particular, not
- * the password of the mailbox the shop sends from. If this database were ever
- * exposed, a password reused there would take the mailbox with it.
+ * The password is prompted without echo and hashed here, not passed as a
+ * command-line argument. Pick one used for nothing else.
  *
  * Re-running with the same email changes that account's password rather than
  * creating a second one.
  */
 import { randomUUID } from "node:crypto";
+import { StringDecoder } from "node:string_decoder";
 import { MongoClient } from "mongodb";
 import { hashPassword } from "../src/lib/auth/password.ts";
 import type { UserDoc } from "../src/lib/db/mongo.ts";
 
-const [emailArg, passwordArg, nameArg] = process.argv.slice(2);
+const [emailArg, nameArg] = process.argv.slice(2);
 
 function fail(message: string): never {
   console.error(message);
   console.error("");
-  console.error('Usage: npm run admin -- <email> <password> ["Display Name"]');
+  console.error('Usage: npm run admin -- <email> ["Display Name"]');
   process.exit(1);
 }
 
-if (!emailArg || !passwordArg) fail("An email and a password are both required.");
+if (!emailArg) fail("An email is required.");
 
 const email = emailArg.trim().toLowerCase();
 if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) fail(`"${emailArg}" is not an email address.`);
+
+const uri = process.env.MONGODB_URI;
+if (!uri) fail("MONGODB_URI is not set. Check .env.local.");
+
+function readPasswordWithoutEcho(): Promise<string> {
+  const input = process.stdin;
+  if (!input.isTTY) {
+    fail("Run this command in an interactive terminal to enter the password securely.");
+  }
+
+  return new Promise((resolve, reject) => {
+    const decoder = new StringDecoder("utf8");
+    let password = "";
+
+    const cleanup = () => {
+      input.off("data", onData);
+      input.setRawMode(false);
+      input.pause();
+      process.stdout.write("\n");
+    };
+
+    const onData = (chunk: Buffer) => {
+      for (const character of decoder.write(chunk)) {
+        if (character === "\u0003") {
+          cleanup();
+          reject(new Error("Password entry cancelled."));
+          return;
+        }
+        if (character === "\r" || character === "\n") {
+          cleanup();
+          resolve(password);
+          return;
+        }
+        if (character === "\u007f" || character === "\b") {
+          password = Array.from(password).slice(0, -1).join("");
+        } else if (character >= " ") {
+          password += character;
+        }
+      }
+    };
+
+    try {
+      input.setRawMode(true);
+      input.resume();
+      input.on("data", onData);
+      process.stdout.write("Admin password (input hidden): ");
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+const passwordArg = await readPasswordWithoutEcho();
 
 // The same rules the signup form enforces, so an account made here could also
 // have been made through the site.
 if (passwordArg.length < 8) fail("The password must be at least 8 characters.");
 if (!/[a-zA-Z]/.test(passwordArg)) fail("The password needs at least one letter.");
 if (!/[0-9]/.test(passwordArg)) fail("The password needs at least one number.");
-
-const uri = process.env.MONGODB_URI;
-if (!uri) fail("MONGODB_URI is not set. Check .env.local.");
 
 const client = new MongoClient(uri);
 

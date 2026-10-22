@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useForm, useWatch, type Control } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { TextField, TextAreaField } from "@/components/form/TextField";
 import { EmailField } from "@/components/form/EmailField";
+import { ProductImage } from "@/components/ProductImage";
 import { useCartStore, useCartEntries, useCartSubtotal } from "@/stores/cart";
 import { useUIStore } from "@/stores/ui";
 import { formatPrice } from "@/lib/format";
@@ -50,17 +51,14 @@ function EmailNotice({
 }
 
 export function CheckoutForm({ defaults }: { defaults: CheckoutDefaults }) {
+  const router = useRouter();
   const ready = useCartStore((s) => s.hydrated);
   const lines = useCartStore((s) => s.lines);
   const clear = useCartStore((s) => s.clear);
+  const getOrCreateCheckoutKey = useCartStore((s) => s.getOrCreateCheckoutKey);
   const entries = useCartEntries();
   const subtotal = useCartSubtotal();
   const showToast = useUIStore((s) => s.showToast);
-  const [placed, setPlaced] = useState<{
-    reference: string;
-    total: number;
-    email: string;
-  } | null>(null);
 
   const {
     register,
@@ -79,66 +77,29 @@ export function CheckoutForm({ defaults }: { defaults: CheckoutDefaults }) {
       phone: "",
       address: "",
       city: "",
+      area: "",
+      province: "",
+      postalCode: "",
       notes: "",
     },
   });
 
   async function onSubmit(values: CheckoutValues) {
-    const result = await placeOrderAction(values, lines);
+    try {
+      const result = await placeOrderAction(values, lines, getOrCreateCheckoutKey());
+      if (!result.ok) {
+        setError("root", { message: result.message });
+        return;
+      }
 
-    if (!result.ok) {
-      setError("root", { message: result.message });
-      return;
+      clear();
+      showToast("Order placed", `Reference ${result.reference}`);
+      router.push(`/checkout/confirmation/${result.orderId}`);
+    } catch {
+      setError("root", {
+        message: "We could not confirm your order. Your cart is still saved; please try again.",
+      });
     }
-
-    setPlaced({ reference: result.reference, total: result.total, email: values.email });
-    clear();
-    showToast("Order placed", `Reference ${result.reference}`);
-  }
-
-  if (placed) {
-    return (
-      <div className="mx-auto max-w-lg px-4 py-24 text-center">
-        <span className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-brand-50 text-brand-600 dark:bg-brand-900/40 dark:text-brand-300">
-          <svg viewBox="0 0 24 24" className="h-9 w-9" aria-hidden="true">
-            <path
-              d="M5 12.5l4.2 4.2L19 7"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </span>
-        <h1 className="mt-6 text-2xl font-semibold tracking-tight">Order placed</h1>
-        <p className="mt-2 text-muted">
-          Your reference is <span className="font-mono font-medium text-ink">{placed.reference}</span>.
-          We will call to confirm before dispatch.
-        </p>
-        <p className="mt-1 text-muted">
-          Total due on delivery: <span className="font-medium text-ink">{formatPrice(placed.total)}</span>
-        </p>
-
-        {/* Shown back so a mistyped address is caught here rather than silently
-            bouncing. The order itself is already placed either way. */}
-        <p className="mt-4 rounded-xl border border-line bg-surface-sunken px-4 py-3 text-sm text-muted">
-          A confirmation is on its way to{" "}
-          <span className="font-medium text-ink">{placed.email}</span>.
-          <br />
-          Not your address? Call us with reference{" "}
-          <span className="font-mono text-ink">{placed.reference}</span> — the order
-          is placed regardless.
-        </p>
-
-        <Link
-          href="/products"
-          className="mt-7 inline-block rounded-xl bg-brand-600 px-6 py-3.5 text-sm font-medium text-white transition hover:bg-brand-700 active:scale-[0.98]"
-        >
-          Keep shopping
-        </Link>
-      </div>
-    );
   }
 
   if (!ready) {
@@ -228,13 +189,37 @@ export function CheckoutForm({ defaults }: { defaults: CheckoutDefaults }) {
             {...register("address")}
           />
 
-          <TextField
-            label="City"
-            autoComplete="address-level2"
-            placeholder="Lahore"
-            error={errors.city?.message}
-            {...register("city")}
-          />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <TextField
+              label="Area / locality (optional)"
+              placeholder="Gulberg III"
+              error={errors.area?.message}
+              {...register("area")}
+            />
+            <TextField
+              label="City"
+              autoComplete="address-level2"
+              placeholder="Lahore"
+              error={errors.city?.message}
+              {...register("city")}
+            />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <TextField
+              label="Province (optional)"
+              placeholder="Punjab"
+              error={errors.province?.message}
+              {...register("province")}
+            />
+            <TextField
+              label="Postal code (optional)"
+              autoComplete="postal-code"
+              placeholder="54000"
+              error={errors.postalCode?.message}
+              {...register("postalCode")}
+            />
+          </div>
 
           <TextAreaField
             label="Notes (optional)"
@@ -242,6 +227,13 @@ export function CheckoutForm({ defaults }: { defaults: CheckoutDefaults }) {
             error={errors.notes?.message}
             {...register("notes")}
           />
+
+          <div className="rounded-xl border border-line bg-surface-sunken p-4">
+            <p className="text-sm font-medium">Cash on Delivery</p>
+            <p className="mt-1 text-xs text-muted">
+              Pay the order total in cash when your parcel is delivered. Payment will remain pending until collected.
+            </p>
+          </div>
 
           <button
             type="submit"
@@ -257,9 +249,23 @@ export function CheckoutForm({ defaults }: { defaults: CheckoutDefaults }) {
 
           <ul className="mt-4 space-y-3 text-sm">
             {entries.map(({ product, variant, color, quantity, lineTotal }) => (
-              <li key={`${product.id}::${color}`} className="flex justify-between gap-3">
+              <li key={`${product.id}::${color}`} className="flex items-center justify-between gap-3">
                 <span className="min-w-0">
-                  <span className="line-clamp-2">{product.name}</span>
+                  <span className="flex items-center gap-3">
+                    <span className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-line">
+                      <ProductImage
+                        product={product}
+                        src={variant.image}
+                        alt={color ? `${product.name} in ${color}` : product.name}
+                      />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="line-clamp-2">{product.name}</span>
+                      <span className="block text-xs text-muted">
+                        {formatPrice(product.price)} each
+                      </span>
+                    </span>
+                  </span>
                   {color && (
                     <span className="ml-1 inline-flex items-center gap-1 text-muted">
                       <span

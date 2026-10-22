@@ -1,5 +1,6 @@
 import "server-only";
 import { after } from "next/server";
+import type { ClientSession } from "mongodb";
 import { checkoutSchema } from "@/lib/validation";
 import { sendMail } from "@/lib/email/mailer";
 import { newOrderOwnerEmail, orderConfirmationEmail } from "@/lib/email/templates";
@@ -8,48 +9,99 @@ import {
   getProductsByIds,
   restoreVariantStock,
 } from "@/lib/db/products";
-import { createOrder } from "@/lib/db/orders";
+import {
+  createOrder,
+  findOrderByIdempotencyKey,
+} from "@/lib/db/orders";
+import { getMongoClient, isConfigured } from "@/lib/db/mongo";
 import { findVariant } from "@/lib/products/variants";
 import { deliveryFeeFor } from "@/lib/shipping";
 import type { CartLine, Order, OrderItem } from "@/types";
 
 /**
- * Placing an order, with the authenticated user handed in.
- *
- * Both entry points call this: the checkout Server Action (cookie session) and
- * POST /api/orders (bearer token). Pricing, variant and stock checks and the
- * confirmation emails live here once — if they were copied into each one, the
- * two would eventually disagree about what an order costs.
- *
- * Authentication is the caller's job; this assumes it has already happened.
+ * Both the cookie-authenticated checkout action and bearer-token API use this
+ * service. Prices and stock always come from the server-side catalogue.
  */
 
 export type PlaceOrderOutcome =
   | { ok: true; order: Order }
-  | { ok: false; message: string; reason: "invalid" | "empty" | "unavailable" | "stock" };
+  | {
+      ok: false;
+      message: string;
+      reason: "invalid" | "empty" | "unavailable" | "stock" | "conflict" | "failed";
+    };
 
-/** Accepts only well-formed `{ productId, color, quantity }` entries. */
+const inFlight = new Map<string, Promise<PlaceOrderOutcome>>();
+
+class OrderFault extends Error {
+  constructor(readonly outcome: Extract<PlaceOrderOutcome, { ok: false }>) {
+    super(outcome.message);
+  }
+}
+
+/** Accepts and coalesces only well-formed `{ productId, color, quantity }` lines. */
 export function parseCartLines(value: unknown): CartLine[] | null {
-  if (!Array.isArray(value)) return null;
+  if (!Array.isArray(value) || value.length === 0 || value.length > 50) return null;
 
-  const lines: CartLine[] = [];
+  const combined = new Map<string, CartLine>();
   for (const entry of value) {
     if (typeof entry !== "object" || entry === null) return null;
     const { productId, color, quantity } = entry as Partial<CartLine>;
-    if (typeof productId !== "string" || typeof quantity !== "number") return null;
-    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 999) return null;
-    // Absent colour means a product without variants; anything else must be a
-    // string so it can be matched against a real variant below.
-    if (color !== undefined && typeof color !== "string") return null;
-    lines.push({ productId, color: color ?? "", quantity });
+    if (
+      typeof productId !== "string" ||
+      productId.length === 0 ||
+      productId.length > 128 ||
+      typeof quantity !== "number" ||
+      !Number.isInteger(quantity) ||
+      quantity < 1 ||
+      quantity > 999 ||
+      (color !== undefined && (typeof color !== "string" || color.length > 40))
+    ) {
+      return null;
+    }
+
+    const normalizedColor = color ?? "";
+    const key = `${productId}::${normalizedColor}`;
+    const previous = combined.get(key);
+    const totalQuantity = (previous?.quantity ?? 0) + quantity;
+    if (totalQuantity > 999) return null;
+    combined.set(key, { productId, color: normalizedColor, quantity: totalQuantity });
   }
-  return lines;
+  return [...combined.values()];
 }
 
 export async function placeOrder(options: {
   details: unknown;
   cartLines: unknown;
   userId: string;
+  idempotencyKey: string;
+}): Promise<PlaceOrderOutcome> {
+  if (!/^[A-Za-z0-9_-]{16,100}$/.test(options.idempotencyKey)) {
+    return {
+      ok: false,
+      reason: "invalid",
+      message: "Refresh checkout and try placing your order again.",
+    };
+  }
+
+  const key = `${options.userId}:${options.idempotencyKey}`;
+  const pending = inFlight.get(key);
+  if (pending) return pending;
+
+  const operation = placeOrderOnce(options);
+  inFlight.set(key, operation);
+  try {
+    return await operation;
+  } finally {
+    if (inFlight.get(key) === operation) inFlight.delete(key);
+  }
+}
+
+async function placeOrderOnce(options: {
+  details: unknown;
+  cartLines: unknown;
+  userId: string;
+  idempotencyKey: string;
 }): Promise<PlaceOrderOutcome> {
   const parsed = checkoutSchema.safeParse(options.details);
   if (!parsed.success) {
@@ -61,46 +113,183 @@ export async function placeOrder(options: {
   }
 
   const lines = parseCartLines(options.cartLines);
-  if (!lines || lines.length === 0) {
-    return { ok: false, reason: "empty", message: "Your cart is empty." };
+  if (!lines) {
+    return { ok: false, reason: "empty", message: "Your cart is empty or invalid." };
   }
 
-  // Prices, colours and stock all come from the catalogue. The request only says
-  // which product, which colour and how many.
-  const products = await getProductsByIds(lines.map((line) => line.productId));
-  const byId = new Map(products.map((product) => [product.id, product]));
+  try {
+    const previous = await findOrderByIdempotencyKey(options.userId, options.idempotencyKey);
+    if (previous) return { ok: true, order: previous };
 
+    if (isConfigured()) {
+      return await placeWithTransaction(options, parsed.data, lines);
+    }
+    return await placeInMemory(options, parsed.data, lines);
+  } catch (error) {
+    if (error instanceof OrderFault) return error.outcome;
+    console.error("[order] Could not place the order:", error);
+    return {
+      ok: false,
+      reason: "failed",
+      message: "Could not place your order right now. Your cart has been kept; please try again.",
+    };
+  }
+}
+
+async function placeWithTransaction(
+  options: { userId: string; idempotencyKey: string },
+  details: ReturnType<typeof checkoutSchema.parse>,
+  lines: CartLine[],
+): Promise<PlaceOrderOutcome> {
+  const client = await getMongoClient();
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const session = client.startSession();
+
+    try {
+      const outcome = await session.withTransaction(async () => {
+        const previous = await findOrderByIdempotencyKey(
+          options.userId,
+          options.idempotencyKey,
+          session,
+        );
+        if (previous) {
+          return { order: previous, created: false };
+        }
+
+        const items = await validatedItems(lines, session);
+        await reserveInventory(items, session);
+        const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        const delivery = deliveryFeeFor(subtotal);
+
+        const order = await createOrder(
+          {
+            customerName: details.fullName,
+            email: details.email,
+            phone: details.phone,
+            address: details.address,
+            city: details.city,
+            area: details.area || undefined,
+            province: details.province || undefined,
+            postalCode: details.postalCode || undefined,
+            notes: details.notes,
+            items,
+            subtotal,
+            delivery,
+            total: subtotal + delivery,
+            userId: options.userId,
+            idempotencyKey: options.idempotencyKey,
+            actorId: options.userId,
+          },
+          session,
+        );
+        return { order, created: true };
+      });
+
+      if (!outcome) throw new Error("Order transaction completed without an outcome.");
+      if (outcome.created) sendOrderEmails(outcome.order);
+      return { ok: true, order: outcome.order };
+    } catch (error) {
+      if (isDuplicateKey(error)) {
+        const existing = await findOrderByIdempotencyKey(
+          options.userId,
+          options.idempotencyKey,
+        );
+        if (existing) return { ok: true, order: existing };
+        // A random order-reference collision is retried with a new reference.
+        if (attempt < 2) continue;
+      }
+      if (error instanceof OrderFault) return error.outcome;
+      throw error;
+    } finally {
+      await session.endSession();
+    }
+  }
+
+  return {
+    ok: false,
+    reason: "conflict",
+    message: "We could not confirm this order. Please retry; your cart is unchanged.",
+  };
+}
+
+async function placeInMemory(
+  options: { userId: string; idempotencyKey: string },
+  details: ReturnType<typeof checkoutSchema.parse>,
+  lines: CartLine[],
+): Promise<PlaceOrderOutcome> {
+  const items = await validatedItems(lines);
+  const reserved: OrderItem[] = [];
+  try {
+    await reserveInventory(items, undefined, (item) => reserved.push(item));
+    const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const delivery = deliveryFeeFor(subtotal);
+    const order = await createOrder({
+      customerName: details.fullName,
+      email: details.email,
+      phone: details.phone,
+      address: details.address,
+      city: details.city,
+      area: details.area || undefined,
+      province: details.province || undefined,
+      postalCode: details.postalCode || undefined,
+      notes: details.notes,
+      items,
+      subtotal,
+      delivery,
+      total: subtotal + delivery,
+      userId: options.userId,
+      idempotencyKey: options.idempotencyKey,
+      actorId: options.userId,
+    });
+    sendOrderEmails(order);
+    return { ok: true, order };
+  } catch (error) {
+    for (const item of reserved) {
+      const restored = await restoreVariantStock(item.productId, item.color, item.quantity);
+      if (!restored) console.error("[order] Could not restore reserved stock:", item.productId);
+    }
+    if (error instanceof OrderFault) return error.outcome;
+    throw error;
+  }
+}
+
+async function validatedItems(
+  lines: CartLine[],
+  session?: ClientSession,
+): Promise<OrderItem[]> {
+  const products = await getProductsByIds(lines.map((line) => line.productId), session);
+  const byId = new Map(products.map((product) => [product.id, product]));
   const items: OrderItem[] = [];
+
   for (const line of lines) {
     const product = byId.get(line.productId);
     if (!product) {
-      return {
+      throw new OrderFault({
         ok: false,
         reason: "unavailable",
         message: "One of the products is no longer available.",
-      };
+      });
     }
 
     const variant = findVariant(product, line.color);
     if (!variant) {
-      return {
+      throw new OrderFault({
         ok: false,
         reason: "unavailable",
         message: line.color
           ? `"${product.name}" no longer comes in ${line.color}.`
           : "One of the products is no longer available.",
-      };
+      });
     }
-
-    // Against this colour's stock, never the product total.
     if (variant.stock < line.quantity) {
-      return {
+      throw new OrderFault({
         ok: false,
         reason: "stock",
         message: variant.color
           ? `Only ${variant.stock} left of "${product.name}" in ${variant.color}.`
           : `Only ${variant.stock} left of "${product.name}".`,
-      };
+      });
     }
 
     items.push({
@@ -113,74 +302,43 @@ export async function placeOrder(options: {
       image: variant.image,
     });
   }
+  return items;
+}
 
-  // Take the stock before writing the order. Each decrement is a single
-  // conditional update, so two orders arriving together cannot both pass. If a
-  // later line loses that race, the earlier ones are put back.
-  const reserved: OrderItem[] = [];
+async function reserveInventory(
+  items: OrderItem[],
+  session?: ClientSession,
+  onReserved?: (item: OrderItem) => void,
+): Promise<void> {
   for (const item of items) {
-    const taken = await decrementVariantStock(item.productId, item.color, item.quantity);
-    if (taken) {
-      reserved.push(item);
-      continue;
+    const taken = await decrementVariantStock(
+      item.productId,
+      item.color,
+      item.quantity,
+      session,
+    );
+    if (!taken) {
+      throw new OrderFault({
+        ok: false,
+        reason: "stock",
+        message: item.color
+          ? `"${item.name}" in ${item.color} just sold out. Adjust the quantity and try again.`
+          : `"${item.name}" just sold out.`,
+      });
     }
-
-    await releaseAll(reserved);
-    return {
-      ok: false,
-      reason: "stock",
-      message: item.color
-        ? `"${item.name}" in ${item.color} just sold out. Adjust the quantity and try again.`
-        : `"${item.name}" just sold out.`,
-    };
-  }
-
-  const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const delivery = deliveryFeeFor(subtotal);
-
-  let order: Order;
-  try {
-    order = await createOrder({
-      customerName: parsed.data.fullName,
-      email: parsed.data.email,
-      phone: parsed.data.phone,
-      address: parsed.data.address,
-      city: parsed.data.city,
-      notes: parsed.data.notes,
-      items,
-      subtotal,
-      delivery,
-      total: subtotal + delivery,
-      userId: options.userId,
-    });
-  } catch (error) {
-    // The stock is already gone; without putting it back it would be stranded.
-    await releaseAll(reserved);
-    console.error("[order] Could not write the order, stock released:", error);
-    return {
-      ok: false,
-      reason: "unavailable",
-      message: "Could not place the order just now. Please try again.",
-    };
-  }
-
-  sendOrderEmails(order);
-
-  return { ok: true, order };
-}
-
-async function releaseAll(items: OrderItem[]): Promise<void> {
-  for (const item of items) {
-    await restoreVariantStock(item.productId, item.color, item.quantity);
+    onReserved?.(item);
   }
 }
 
-/**
- * Queued to run after the response, so a slow or unreachable SMTP server never
- * holds up the confirmation. sendMail swallows its own failures: an order that
- * is placed stays placed even if neither email goes out, and one failing does
- * not stop the other.
- */
+function isDuplicateKey(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === 11000
+  );
+}
+
 function sendOrderEmails(order: Order): void {
   after(async () => {
     const confirmation = orderConfirmationEmail(order);

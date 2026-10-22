@@ -11,7 +11,9 @@ import type { User, UserRole } from "@/types";
  * place where this can be got wrong.
  *
  * There is no server-side session store, so a token stays valid until it
- * expires. Signing out clears the cookie; a leaked bearer token cannot be
+ * expires unless its account is deleted or disabled. Authorization reloads the
+ * current account role, so demotion takes effect without waiting for expiry.
+ * Signing out clears the cookie; a leaked bearer token cannot otherwise be
  * revoked before `exp`, which is why the lifetime is a week and not a year.
  */
 

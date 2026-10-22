@@ -29,6 +29,7 @@ export type CartEntry = {
 
 type CartState = {
   lines: CartLine[];
+  checkoutKey: string | null;
   /** The server-rendered catalogue, used to resolve lines into products. */
   catalogue: Product[];
   /** False until localStorage has been read, so the UI can show a skeleton. */
@@ -39,6 +40,7 @@ type CartState = {
   setQuantity: (productId: string, color: string, quantity: number) => void;
   removeItem: (productId: string, color: string) => void;
   clear: () => void;
+  getOrCreateCheckoutKey: () => string;
 };
 
 /** Stock for one colour — never the product total, which would oversell. */
@@ -52,6 +54,7 @@ export const useCartStore = create<CartState>()(
   persist(
     (set, get) => ({
       lines: [],
+      checkoutKey: null,
       catalogue: [],
       hydrated: false,
 
@@ -73,6 +76,7 @@ export const useCartStore = create<CartState>()(
                   : line,
               )
             : [...lines, { productId, color, quantity: Math.min(quantity, stock) }],
+          checkoutKey: null,
         });
       },
 
@@ -84,6 +88,7 @@ export const useCartStore = create<CartState>()(
             lines: get().lines.filter(
               (line) => cartLineKey(line.productId, line.color) !== key,
             ),
+            checkoutKey: null,
           });
           return;
         }
@@ -95,6 +100,7 @@ export const useCartStore = create<CartState>()(
               ? { ...line, quantity: Math.min(quantity, stock || quantity) }
               : line,
           ),
+          checkoutKey: null,
         });
       },
 
@@ -102,17 +108,26 @@ export const useCartStore = create<CartState>()(
         const key = cartLineKey(productId, color);
         set({
           lines: get().lines.filter((line) => cartLineKey(line.productId, line.color) !== key),
+          checkoutKey: null,
         });
       },
 
-      clear: () => set({ lines: [] }),
+      clear: () => set({ lines: [], checkoutKey: null }),
+
+      getOrCreateCheckoutKey: () => {
+        const existing = get().checkoutKey;
+        if (existing) return existing;
+        const key = globalThis.crypto.randomUUID();
+        set({ checkoutKey: key });
+        return key;
+      },
     }),
     {
       name: "smartshop-cart",
       storage: createJSONStorage(() => localStorage),
       // The catalogue comes from the server on every request and `hydrated`
       // describes this tab; neither belongs in storage.
-      partialize: (state) => ({ lines: state.lines }),
+      partialize: (state) => ({ lines: state.lines, checkoutKey: state.checkoutKey }),
     },
   ),
 );

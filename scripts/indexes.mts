@@ -11,6 +11,7 @@
  * options is a no-op.
  */
 import { MongoClient } from "mongodb";
+import { ensureIdempotencyIndex } from "../src/lib/db/idempotency-index.ts";
 
 const uri = process.env.MONGODB_URI;
 const dbName = process.env.MONGODB_DB || "smartshop";
@@ -31,9 +32,13 @@ try {
   console.log(`Connected to "${dbName}"`);
 
   const made: string[] = [];
-  const ensure = async (label: string, run: () => Promise<unknown>) => {
-    await run();
+  const ensure = async <T,>(
+    label: string,
+    run: () => Promise<T>,
+  ): Promise<T> => {
+    const result = await run();
     made.push(label);
+    return result;
   };
 
   await ensure("products.slug (unique)", () =>
@@ -66,6 +71,20 @@ try {
     db.collection("orders").createIndex({ createdAt: -1 }),
   );
   await ensure("orders.status", () => db.collection("orders").createIndex({ status: 1 }));
+  await ensure("orders.reference (unique)", () =>
+    db.collection("orders").createIndex({ reference: 1 }, { unique: true }),
+  );
+  await ensure("orders.userId + createdAt", () =>
+    db.collection("orders").createIndex({ userId: 1, createdAt: -1 }),
+  );
+  const orders = db.collection("orders");
+  const removedLegacyIndexes = await ensure(
+    "orders.userId + idempotencyKey (unique, partial)",
+    () => ensureIdempotencyIndex(orders),
+  );
+  for (const name of removedLegacyIndexes) {
+    made.push(`removed legacy global idempotencyKey index (${name})`);
+  }
 
   // expireAfterSeconds: 0 means "delete when expiresAt has passed", so each
   // document carries its own lifetime rather than the index fixing one.

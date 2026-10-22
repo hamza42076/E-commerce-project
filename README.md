@@ -4,13 +4,31 @@ An e-commerce storefront with accounts, checkout and an admin panel. Built with
 Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS v4, MongoDB, and
 react-hook-form + zod for every form.
 
+Use Node.js 20.9 or newer. Install dependencies with `npm ci`; run the app with
+`npm run dev`. The project currently has unit tests but no browser E2E or
+replica-set integration test setup.
+
 ```bash
-cp .env.example .env.local   # add MONGODB_URI and AUTH_SECRET
-npm run seed                 # load catalogue + demo accounts into MongoDB
+cp .env.example .env.local   # set local MONGODB_URI and AUTH_SECRET
+npm run seed                 # load the catalogue into MongoDB
 npm run dev                  # http://localhost:3000
 ```
 
 The app also runs with no database at all — see [Without a database](#without-a-database).
+
+### Local checks
+
+```bash
+npm test
+npm run lint
+npx tsc --noEmit
+npm run build
+npm audit
+npm audit --omit=dev
+```
+
+The order tests use the in-memory repository; they do not establish MongoDB
+transaction behavior. Do not point local tests or scripts at production.
 
 ## Routes
 
@@ -20,13 +38,16 @@ The app also runs with no database at all — see [Without a database](#without-
 | `/products`        | Catalogue with search, category filter and sorting (all URL-driven)      |
 | `/products/[slug]` | Colour swatches, per-colour gallery and stock, quantity, add to cart     |
 | `/cart`            | Line items per colour, quantity editing, order summary                   |
-| `/checkout`        | Delivery details form, places the order, shows the reference             |
+| `/checkout`        | Signed-in delivery form; places a COD order and opens its receipt          |
+| `/checkout/confirmation/[id]` | Order receipt, visible only to the owning customer              |
+| `/account/orders`  | Signed-in customer's order history                                         |
+| `/account/orders/[id]` | Order details, visible only to the owning customer                    |
 | `/login`           | Sign in                                                                  |
 | `/signup`          | Create an account                                                        |
 | `/forgot-password` | Asks for a reset link by email                                           |
 | `/reset-password`  | Sets a new password from the link in that email                          |
 | `/admin`           | Revenue, order counts, recent orders — **admin role only**               |
-| `/admin/orders`    | Every order with customer details and the colour ordered; status inline  |
+| `/admin/orders`    | Filtered order management, status transitions, and COD collection         |
 | `/admin/products`  | Product list with edit and delete, plus the add-product form             |
 | `/admin/products/[slug]/edit` | The same form, pre-filled — add, remove and re-stock colours  |
 
@@ -151,8 +172,9 @@ disabled until it is done.
 
 ### Cloudinary
 
-Configure it and the upload button starts using it; leave it blank and the
-button writes to `public/uploads/` as before, logging a warning.
+Configure it and the upload button uses signed Cloudinary uploads. Without it,
+local development writes to `public/uploads/`; production uploads fail clearly
+instead of writing to ephemeral local storage.
 
 Either paste the single URL the Cloudinary dashboard shows:
 
@@ -182,8 +204,8 @@ Cloudinary is not trusted to police what arrives. The admin check, the 5 MB cap,
 the magic-byte sniff and the SVG refusal all run first, exactly as they do for a
 local write — only the destination changes.
 
-The signing routine is checked against Cloudinary's own two documented examples;
-run that check with the other helper tests.
+The signing routine should be checked against Cloudinary's documented examples
+when changing the upload integration.
 
 > Deleting a product does not delete its Cloudinary images. They are small and
 > orphaned rather than harmful, but they do accumulate.
@@ -195,7 +217,10 @@ Leave both blank and `ProductImage` draws a category illustration instead.
 
 Uploads go through a Server Action (`src/lib/admin/upload.ts`) — to Cloudinary
 when it is configured, otherwise to `public/uploads/` under a generated UUID
-filename. The checks below run before either, and are the same in both cases.
+filename in local development. Without Cloudinary, production uploads are
+rejected; configure and verify persistent storage before relying on uploads in
+production. The checks below run before either destination and are the same in
+both cases.
 The action is admin-only and checks, in this order:
 
 - **Size** — 5 MB maximum. `serverActions.bodySizeLimit` in `next.config.ts` is
@@ -298,9 +323,9 @@ would matter: `Host: attacker.example` would send a real token for a real
 account, to its real owner, pointed at somebody else's server.
 
 One honest limitation: sessions are stateless, so changing a password does not
-invalidate a session already signed in elsewhere. It stays valid until it
-expires, at most a week. Fixing that properly means a token version on the user
-record, checked on every request.
+invalidate a signed-in customer session. It stays valid until it expires, at
+most a week. The current account and role are re-read for each valid session,
+so deletion or disabling blocks it and admin demotion removes admin access.
 
 ### Making the administrator
 
@@ -312,17 +337,16 @@ Customers sign up through the site. The administrator is made from the command
 line, against whichever database `.env.local` points at:
 
 ```bash
-npm run admin -- you@example.com "a strong password" "Your Name"
+npm run admin -- you@example.com "Your Name"
 ```
 
 Re-running it for the same email changes that account's password instead of
 creating a second one, which is the way back in if the administrator's own
 mailbox is the one that is unreachable.
 
-The password is typed by you and hashed on the spot; it is not written to any
-file. **Do not reuse the password of the mailbox the shop sends from.** If this
-database were ever exposed, a password reused there would take the mailbox —
-and every order email with it.
+The command prompts for the password without echoing it, so it is not placed in
+shell history or the process argument list. It is hashed on the spot and not
+written to a file. **Do not reuse another account's password.**
 
 ## Forms
 
@@ -441,16 +465,12 @@ updateOne(
 )
 ```
 
-The check and the decrement are one operation, so two orders landing together
-cannot both pass and oversell. Lines are reserved one at a time; if a later line
-loses that race, the earlier reservations are put back before the error is
-returned.
-
-> **Known limit:** reserving stock and writing the order are separate
-> operations, not one transaction. If the order write fails the reservations are
-> released in a `catch`, but a process killed between the two would leave stock
-> reserved for an order that was never written. Atlas supports transactions, so
-> this is fixable when it matters.
+The check and decrement are conditional writes inside the same MongoDB
+transaction as order creation, so concurrent checkouts cannot oversell and an
+order cannot be saved without reserving its stock. Cancellation also restores
+the stock in a transaction, and repeat cancellation does not restore it twice.
+Production MongoDB must support transactions (for example, an Atlas replica
+set).
 
 ### Order snapshots
 
@@ -511,13 +531,21 @@ use.
 | `GET` | `/api/products/[slug]` | anyone | One product plus related ones |
 | `DELETE` | `/api/products/[slug]` | admin | Deletes it |
 | `GET` | `/api/categories` | anyone | All categories |
-| `POST` | `/api/orders` | signed in | Places an order |
+| `POST` | `/api/orders` | signed in | Places a COD order; requires an `Idempotency-Key` header |
 | `GET` | `/api/orders` | signed in | Admin gets all; a customer gets only their own |
 | `GET` | `/api/orders/[id]` | signed in | Own order, or any order for an admin |
-| `PATCH` | `/api/orders/[id]` | admin | `{ "status": "shipped" }` |
+| `PATCH` | `/api/orders/[id]` | admin | `{ "status": "confirmed" }` or `{ "paymentStatus": "paid" }` |
 
-Statuses used: `200`, `201`, `400` (no JSON body), `401` (no or bad token),
-`403` (wrong role), `404`, `409` (duplicate), `422` (validation).
+Statuses used: `200`, `201`, `400` (malformed request or missing idempotency
+key), `401` (no or bad token), `403` (wrong role), `404`, `409` (stock or
+transition conflict), `422` (validation).
+
+Orders are COD-only and start with `paymentStatus: "pending"`. Admins can move
+an order through `pending → confirmed → processing → shipped → delivered`;
+pending, confirmed, and processing orders may instead be cancelled. COD may be
+recorded as collected only after delivery. Reusing an idempotency key returns
+the original order instead of placing it again. The checkout keeps a stable key
+for the current cart and rotates it when the cart changes or an order succeeds.
 
 Which account a request acts as always comes from the token, never from a
 parameter — so a customer cannot ask for someone else's orders. Reading another
@@ -561,7 +589,8 @@ if no email goes out.
 | ---- | -- | ------- |
 | Order placed | customer | `Order SS-1042 confirmed` |
 | Order placed | `OWNER_EMAIL` | `New order SS-1042 — Rs 33,597 — Lahore` |
-| Status → pending | customer | `Order SS-1042 is being prepared` |
+| Status → confirmed | customer | `Order SS-1042 confirmed` |
+| Status → processing | customer | `Order SS-1042 is being packed` |
 | Status → shipped | customer | `Order SS-1042 is on the way` |
 | Status → delivered | customer | `Order SS-1042 delivered` |
 | Status → cancelled | customer | `Order SS-1042 has been cancelled` |
@@ -577,7 +606,7 @@ shipped."
 Every template ships an HTML and a plain-text part, and customer-supplied values
 — name, address, notes — are HTML-escaped before going into the markup.
 
-Preview all six without sending anything:
+Preview the order, owner, status, and reset templates without sending anything:
 
 ```bash
 npm run email:preview          # writes email-preview-*.html
@@ -591,7 +620,7 @@ npm run email:test -- you@example.com   # checks SMTP, then sends
 | `products`   | product id    | Indexed on `slug` (unique), category, featured, price |
 | `categories` | category slug | `name`, `position`                            |
 | `users`      | uuid          | Unique index on `email`; holds `passwordHash` |
-| `orders`     | uuid          | Indexed on `createdAt`, `status`              |
+| `orders`     | uuid          | Indexed on `createdAt`, `status`, reference, customer/date, and idempotency key |
 
 All reads and writes go through `src/lib/db/*.ts`. Nothing else in the app talks
 to MongoDB, so queries change in one place. `src/lib/db/mongo.ts` holds the
@@ -605,7 +634,8 @@ warning, so the whole app still runs:
 
 - Products come from `src/lib/db/seed-products.ts`.
 - Orders start from five sample orders, so the admin panel has something to show.
-- The two demo accounts are recreated on every start.
+- There are no pre-made accounts. Accounts created through sign-up exist only
+  in memory and are lost when the dev server restarts.
 
 **Accounts and orders created in that mode are lost when the dev server
 restarts.** In production the fallback throws instead — quietly serving fake
@@ -614,33 +644,37 @@ stock and dropping real orders would be worse than failing. That also means
 
 ## Rendering
 
-The root layout reads the session cookie to render the header, which makes every
-route render per request. Prices, stock and the signed-in state are therefore
-always current, at the cost of static generation.
+The root layout reads the session cookie to render the header and re-reads the
+account for a valid session, which makes every route render per request.
+Prices, stock and the signed-in state are therefore always current, at the cost
+of static generation. Bearer API authorization likewise checks the current
+account role so a deleted, disabled, or demoted account cannot keep its old
+privileges until the token expires.
 
 ## Before going live
 
 The app is a working demo, not a shop that is ready for customers. `npm run build`
-fails on purpose until the first two boxes are ticked.
+checks compilation and production bundling with the current environment; it does
+not verify production credentials, database indexes, catalogue accuracy, email
+delivery, upload persistence, or hosting configuration.
 
-**Environment — done**
+**Environment**
 
-- [x] `MONGODB_URI` — pointed at the `smartshop` database on the existing Atlas
-      cluster. Products, users and orders persist across restarts, and
-      `npm run build` succeeds.
-- [x] `AUTH_SECRET` — generated and set in `.env.local`.
-- [ ] Rotate the Atlas password, or give this project its own database user.
-      The connection string was shared in chat, so treat it as exposed.
+- [ ] Set `MONGODB_URI` to the intended production database and verify
+      connectivity without printing the connection string.
+- [ ] Set a unique, high-entropy `AUTH_SECRET` in the production environment.
+- [ ] Rotate database credentials if the connection string was shared in chat;
+      treat it as exposed until rotation is confirmed.
 
 **Security**
 
-- [ ] Delete the demo accounts (`src/lib/db/demo-accounts.ts`) and the credentials
-      box on the sign-in page, then create a real admin with a strong password.
-      As it stands those passwords are printed on the login page.
+- [ ] Create and verify a real admin account against the intended production
+      database with a strong, unique password. There are no shipped demo
+      accounts; use `npm run admin` for the initial admin.
 
 **Content that is not real**
 
-- [ ] The eight bags in `src/lib/db/seed-products.ts` are placeholders —
+- [ ] The two products in `src/lib/db/seed-products.ts` are placeholders —
       invented names, prices and descriptions. Replace them with the real stock
       from the admin panel.
 - [x] Ratings. Seeded products carry `rating: 0, reviewCount: 0`, and the
@@ -654,18 +688,36 @@ fails on purpose until the first two boxes are ticked.
 
 **Hosting**
 
-- [ ] Image uploads write to `public/uploads/`, so a serverless host such as
-      Vercel will not keep them. Use a VPS, or move `src/lib/admin/upload.ts`
-      to object storage.
-- [ ] Payment is cash on delivery only.
+- [ ] Configure Cloudinary (or another persistent storage provider) in the
+      hosting secret manager. Production image/video uploads fail when
+      Cloudinary is absent; verify upload persistence after a staging restart
+      or redeploy.
+- [x] Payment is cash on delivery only; admin collection is recorded after delivery.
 
 ## Not built yet
 
 - Online payment — orders are cash on delivery.
-- Customer-facing order history.
 - Reviews, so `rating` and `reviewCount` stay at 0 and the stars stay hidden.
-- Reserving stock and writing an order are not one transaction — see
-  [Stock](#stock).
+- There are no E2E browser tests or MongoDB replica-set integration tests yet.
+
+## Operational launch checks
+
+Before indexes are deployed, take and verify a database backup, inspect
+existing index names/options and check for duplicate values that conflict with
+unique indexes. Test index setup first in a disposable staging database. Only
+an authorized operator should run `npm run indexes` against the intended
+deployment; never use `npm run seed` to set up production indexes.
+
+Verify MongoDB transaction support in a staging replica set, including order
+creation rollback, concurrent stock reservation, idempotent retries, order
+cancellation/restock, and COD collection. This repository's unit tests do not
+exercise that infrastructure.
+
+For release, reconcile each product's real price, SKU, image, available colors,
+and physical stock. Confirm backups, monitoring and error alerts, a rollback
+procedure, and an incident contact. If a database credential may have leaked,
+rotate and revoke it at the provider, then replace it only in the hosting
+secret manager; do not put secrets in source control or logs.
 
 ## Catalogue shape
 

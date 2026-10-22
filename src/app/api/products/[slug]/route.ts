@@ -27,7 +27,7 @@ export async function GET(_request: Request, { params }: Context): Promise<Respo
  * 200 -> { data: { deleted: true } }
  */
 export async function DELETE(request: Request, { params }: Context): Promise<Response> {
-  const payload = getBearerUser(request);
+  const payload = await getBearerUser(request);
   if (!payload) return unauthorized();
   if (payload.role !== "admin") return forbidden();
 

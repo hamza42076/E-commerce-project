@@ -8,13 +8,20 @@ import {
   updateProduct,
   type ProductInput,
 } from "@/lib/db/products";
-import { changeOrderStatus } from "@/lib/orders/update-status";
+import { changeOrderStatus, collectCodPayment } from "@/lib/orders/update-status";
 import { getSession } from "@/lib/auth/session";
 import type { OrderStatus } from "@/types";
 
 export type ActionResult = { ok: true; message: string } | { ok: false; message: string };
 
-const ORDER_STATUSES: OrderStatus[] = ["pending", "shipped", "delivered", "cancelled"];
+const ORDER_STATUSES: OrderStatus[] = [
+  "pending",
+  "confirmed",
+  "processing",
+  "shipped",
+  "delivered",
+  "cancelled",
+];
 
 /**
  * Every action here re-checks the session role. The admin layout also guards the
@@ -149,7 +156,10 @@ export async function updateOrderStatusAction(
     return { ok: false, message: "Unknown status." };
   }
 
-  const result = await changeOrderStatus(id, status as OrderStatus);
+  const session = await getSession();
+  if (!session) return { ok: false, message: "Please sign in again." };
+
+  const result = await changeOrderStatus(id, status as OrderStatus, session.userId);
   if (!result.ok) return { ok: false, message: result.message };
 
   revalidatePath("/admin/orders");
@@ -160,5 +170,37 @@ export async function updateOrderStatusAction(
     message: result.emailQueued
       ? `Order marked ${status}. The customer has been emailed.`
       : `Order was already ${status}.`,
+  };
+}
+
+export async function collectCodPaymentAction(id: string): Promise<ActionResult> {
+  if (!(await requireAdmin())) {
+    return { ok: false, message: "You do not have permission to do that." };
+  }
+  if (typeof id !== "string" || id.length === 0) {
+    return { ok: false, message: "That order no longer exists." };
+  }
+
+  const session = await getSession();
+  if (!session) return { ok: false, message: "Please sign in again." };
+
+  const result = await collectCodPayment(id, session.userId);
+  if (!result.ok) {
+    return {
+      ok: false,
+      message:
+        result.reason === "not-found"
+          ? "That order no longer exists."
+            : result.reason === "failed"
+              ? "Could not record this payment. Please try again."
+              : "COD can only be marked collected after the order is delivered.",
+    };
+  }
+
+  revalidatePath("/admin/orders");
+  revalidatePath("/admin");
+  return {
+    ok: true,
+    message: result.alreadyPaid ? "COD payment was already recorded." : "COD payment recorded.",
   };
 }

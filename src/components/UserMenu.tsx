@@ -91,6 +91,16 @@ export function UserMenu() {
               Admin panel
             </Link>
           )}
+          {session.role !== "admin" && (
+            <Link
+              href="/account/orders"
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className="block px-4 py-2.5 text-sm transition hover:bg-surface-sunken"
+            >
+              My orders
+            </Link>
+          )}
           <Link
             href="/products"
             role="menuitem"

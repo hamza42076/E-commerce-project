@@ -1,6 +1,7 @@
 import "server-only";
 import { cookies } from "next/headers";
 import type { User } from "@/types";
+import { findUserById } from "@/lib/db/users";
 import {
   payloadFor,
   signToken,
@@ -39,7 +40,15 @@ export async function destroySession(): Promise<void> {
 export async function getSession(): Promise<SessionPayload | null> {
   const store = await cookies();
   const token = store.get(COOKIE_NAME)?.value;
-  return token ? verifyToken(token) : null;
+  if (!token) return null;
+
+  const payload = verifyToken(token);
+  if (!payload) return null;
+
+  const user = await findUserById(payload.userId);
+  if (!user) return null;
+
+  return { ...payloadFor(user), exp: payload.exp };
 }
 
 export async function isAdmin(): Promise<boolean> {

@@ -71,6 +71,13 @@ export async function uploadProductImageAction(formData: FormData): Promise<Uplo
     return uploadToCloudinary(bytes, extension);
   }
 
+  if (process.env.NODE_ENV === "production") {
+    return {
+      ok: false,
+      message: "Image uploads are unavailable until persistent storage is configured.",
+    };
+  }
+
   // No Cloudinary configured: write to the local disk, as before. That works
   // on a laptop or a VPS, but a serverless host has a read-only, throwaway
   // filesystem — which is the whole reason Cloudinary is the preferred path.
@@ -157,6 +164,13 @@ export async function uploadProductVideoAction(formData: FormData): Promise<Uplo
 
   if (isCloudinaryConfigured()) {
     return uploadVideoToCloudinary(bytes, extension);
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    return {
+      ok: false,
+      message: "Video uploads are unavailable until persistent storage is configured.",
+    };
   }
 
   // Same local fallback as images, and the same caveat: a serverless host has a

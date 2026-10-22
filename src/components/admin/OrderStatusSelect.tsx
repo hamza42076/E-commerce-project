@@ -4,9 +4,8 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { updateOrderStatusAction } from "@/lib/admin/actions";
 import { useUIStore } from "@/stores/ui";
+import { allowedNextOrderStatuses } from "@/lib/orders/status";
 import type { OrderStatus } from "@/types";
-
-const OPTIONS: OrderStatus[] = ["pending", "shipped", "delivered", "cancelled"];
 
 export function OrderStatusSelect({
   orderId,
@@ -23,6 +22,9 @@ export function OrderStatusSelect({
 
   function handleChange(next: OrderStatus) {
     const previous = optimistic;
+    if (next === "cancelled" && !window.confirm("Cancel this order and restore its reserved stock?")) {
+      return;
+    }
     setOptimistic(next);
 
     startTransition(async () => {
@@ -45,7 +47,7 @@ export function OrderStatusSelect({
       aria-label="Order status"
       className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs capitalize outline-none transition focus:border-brand-500 disabled:opacity-60"
     >
-      {OPTIONS.map((option) => (
+      {[status, ...allowedNextOrderStatuses(status)].map((option) => (
         <option key={option} value={option} className="capitalize">
           {option}
         </option>

@@ -13,7 +13,7 @@ import { created, fail, ok, readJson, unauthorized } from "@/lib/api/response";
  * 200 -> { data: { orders, count, scope } }
  */
 export async function GET(request: Request): Promise<Response> {
-  const payload = getBearerUser(request);
+  const payload = await getBearerUser(request);
   if (!payload) return unauthorized();
 
   const admin = payload.role === "admin";
@@ -25,7 +25,8 @@ export async function GET(request: Request): Promise<Response> {
 /**
  * POST /api/orders
  *
- * Signed in required. Body: { details: {...}, items: [{ productId, quantity }] }
+ * Signed in required. Send an Idempotency-Key header and body:
+ * { details: {...}, items: [{ productId, color, quantity }] }
  * `details` takes the same fields as the checkout form.
  *
  * 201 -> { data: { order } }
@@ -35,8 +36,10 @@ export async function GET(request: Request): Promise<Response> {
  * products and how many.
  */
 export async function POST(request: Request): Promise<Response> {
-  const payload = getBearerUser(request);
+  const payload = await getBearerUser(request);
   if (!payload) return unauthorized();
+  const idempotencyKey = request.headers.get("idempotency-key")?.trim();
+  if (!idempotencyKey) return fail("Send an Idempotency-Key header.", 400);
 
   const body = await readJson(request);
   if (body === null || typeof body !== "object") return fail("Send a JSON body.", 400);
@@ -47,9 +50,20 @@ export async function POST(request: Request): Promise<Response> {
     details,
     cartLines: items,
     userId: payload.userId,
+    idempotencyKey,
   });
 
-  if (!result.ok) return fail(result.message, 422);
+  if (!result.ok) {
+    const status =
+      result.reason === "stock" || result.reason === "conflict"
+        ? 409
+        : result.reason === "unavailable"
+          ? 404
+          : result.reason === "failed"
+            ? 500
+            : 422;
+    return fail(result.message, status);
+  }
 
   return created({ order: result.order });
 }

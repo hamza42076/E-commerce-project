@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "vitest run",
     "seed": "node --env-file-if-exists=.env.local scripts/seed.mts",
     "seed:fresh": "node --env-file-if-exists=.env.local scripts/seed.mts --fresh",
     "indexes": "node --env-file-if-exists=.env.local scripts/indexes.mts",
@@ -17,7 +18,7 @@
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",
     "mongodb": "^7.6.0",
-    "next": "16.3.6",
+    "next": "16.3.8",
     "nodemailer": "^10.0.13",
     "react": "19.2.8",
     "react-dom": "19.2.8",
@@ -34,8 +35,9 @@
     "@types/react-dom": "^19",
     "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^9",
-    "eslint-config-next": "16.3.6",
+    "eslint-config-next": "16.3.8",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.4"
   }
 }

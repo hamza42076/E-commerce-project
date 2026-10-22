@@ -4,7 +4,7 @@ import { getSession } from "@/lib/auth/session";
 import { placeOrder } from "./place-order";
 
 export type PlaceOrderResult =
-  | { ok: true; reference: string; total: number }
+  | { ok: true; orderId: string; reference: string; total: number }
   | { ok: false; message: string };
 
 /**
@@ -15,6 +15,7 @@ export type PlaceOrderResult =
 export async function placeOrderAction(
   details: unknown,
   cartLines: unknown,
+  idempotencyKey: string,
 ): Promise<PlaceOrderResult> {
   // Orders require an account. This is the check that counts — a server action
   // is its own HTTP endpoint, so hiding the button is not protection.
@@ -23,8 +24,18 @@ export async function placeOrderAction(
     return { ok: false, message: "Please sign in to place an order." };
   }
 
-  const result = await placeOrder({ details, cartLines, userId: session.userId });
+  const result = await placeOrder({
+    details,
+    cartLines,
+    userId: session.userId,
+    idempotencyKey,
+  });
   if (!result.ok) return { ok: false, message: result.message };
 
-  return { ok: true, reference: result.order.reference, total: result.order.total };
+  return {
+    ok: true,
+    orderId: result.order.id,
+    reference: result.order.reference,
+    total: result.order.total,
+  };
 }

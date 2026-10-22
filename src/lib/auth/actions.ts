@@ -8,7 +8,7 @@ import {
 } from "@/lib/validation";
 import {
   createUser,
-  findUserByEmail,
+  findActiveUserByEmail,
   findUserById,
   toUser,
   updateUserPassword,
@@ -128,7 +128,7 @@ export async function loginAction(values: unknown): Promise<AuthResult> {
   const byEmail = await consumeAttempt(LOGIN_EMAIL_LIMIT, email);
   if (!byEmail.allowed) return tooMany(byEmail.retryAfterSeconds);
 
-  const record = await findUserByEmail(email);
+  const record = await findActiveUserByEmail(email);
 
   if (!record) {
     return {
@@ -233,7 +233,7 @@ export async function requestPasswordResetAction(values: unknown): Promise<Reset
     };
   }
 
-  const record = await findUserByEmail(email);
+  const record = await findActiveUserByEmail(email);
   if (!record) {
     return {
       ok: false,

@@ -53,15 +53,28 @@ export async function findUserByEmail(email: string): Promise<UserRecord | null>
   return doc ? fromDoc(doc) : null;
 }
 
+export async function findActiveUserByEmail(email: string): Promise<UserRecord | null> {
+  const normalised = email.trim().toLowerCase();
+
+  if (shouldUseSeedData()) {
+    const store = memoryStore();
+    return store.find((user) => user.email === normalised && !user.disabled) ?? null;
+  }
+
+  const collection = await usersCollection();
+  const doc = await collection.findOne({ email: normalised, disabled: { $ne: true } });
+  return doc ? fromDoc(doc) : null;
+}
+
 export async function findUserById(id: string): Promise<User | null> {
   if (shouldUseSeedData()) {
     const store = memoryStore();
     const found = store.find((user) => user.id === id);
-    return found ? toUser(found) : null;
+    return found && !found.disabled ? toUser(found) : null;
   }
 
   const collection = await usersCollection();
-  const doc = await collection.findOne({ _id: id });
+  const doc = await collection.findOne({ _id: id, disabled: { $ne: true } });
   return doc ? toUser(fromDoc(doc)) : null;
 }
 

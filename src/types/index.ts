@@ -109,9 +109,25 @@ export type User = {
 /** A user plus the fields never sent to the client. */
 export type UserRecord = User & {
   passwordHash: string;
+  disabled?: boolean;
 };
 
-export type OrderStatus = "pending" | "shipped" | "delivered" | "cancelled";
+export type OrderStatus =
+  | "pending"
+  | "confirmed"
+  | "processing"
+  | "shipped"
+  | "delivered"
+  | "cancelled";
+export type PaymentMethod = "cod";
+export type PaymentStatus = "pending" | "paid";
+
+export type OrderStatusChange = {
+  status: OrderStatus;
+  at: string;
+  actorId: string;
+  actorRole: UserRole;
+};
 
 /**
  * What was ordered, snapshotted. Name, price and colour are copied in at order
@@ -140,13 +156,24 @@ export type Order = {
   phone: string;
   address: string;
   city: string;
+  area?: string;
+  province?: string;
+  postalCode?: string;
   notes?: string;
   items: OrderItem[];
   subtotal: number;
   delivery: number;
   total: number;
+  paymentMethod: PaymentMethod;
+  paymentStatus: PaymentStatus;
+  paidAt?: string;
+  paidBy?: string;
   status: OrderStatus;
+  statusHistory: OrderStatusChange[];
+  idempotencyKey?: string;
+  inventoryRestoredAt?: string;
   createdAt: string;
+  updatedAt: string;
   /** Set when the order was placed by a signed-in user. */
   userId?: string;
 };

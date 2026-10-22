@@ -1,5 +1,5 @@
 import { loginSchema } from "@/lib/validation";
-import { findUserByEmail, toUser } from "@/lib/db/users";
+import { findActiveUserByEmail, toUser } from "@/lib/db/users";
 import { verifyPassword } from "@/lib/auth/password";
 import { payloadFor, signToken, TOKEN_MAX_AGE_SECONDS } from "@/lib/auth/token";
 import {
@@ -21,7 +21,8 @@ import { fail, invalid, ok, readJson, unauthorized } from "@/lib/api/response";
  * 429 -> too many attempts
  *
  * There is no logout endpoint: the token is self-contained, so signing out is
- * the client discarding it. Tokens stay valid until `exp`.
+ * the client discarding it. Tokens stay valid until `exp` unless the account
+ * is deleted or disabled, in which case authenticated requests are rejected.
  */
 export async function POST(request: Request): Promise<Response> {
   const body = await readJson(request);
@@ -43,7 +44,7 @@ export async function POST(request: Request): Promise<Response> {
   const byEmail = await consumeAttempt(LOGIN_EMAIL_LIMIT, email);
   if (!byEmail.allowed) return tooMany(byEmail.retryAfterSeconds);
 
-  const record = await findUserByEmail(email);
+  const record = await findActiveUserByEmail(email);
 
   // One message for both cases. Unlike the web form, which names the reason so
   // a customer who has not registered yet is told so, an API client has nobody
