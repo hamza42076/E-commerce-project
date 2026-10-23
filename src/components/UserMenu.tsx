@@ -102,6 +102,14 @@ export function UserMenu() {
             </Link>
           )}
           <Link
+            href="/account/wishlist"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            className="block px-4 py-2.5 text-sm transition hover:bg-surface-sunken"
+          >
+            My wishlist
+          </Link>
+          <Link
             href="/products"
             role="menuitem"
             onClick={() => setOpen(false)}

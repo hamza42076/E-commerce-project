@@ -1,8 +1,9 @@
 "use client";
 
 import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
+import { persist } from "zustand/middleware";
 import { cartLineKey, findVariant, variantList } from "@/lib/products/variants";
+import { createSafeJSONStorage } from "@/lib/storage/safe-json-storage";
 import type { CartLine, Product, ProductVariant } from "@/types";
 
 /**
@@ -124,7 +125,7 @@ export const useCartStore = create<CartState>()(
     }),
     {
       name: "smartshop-cart",
-      storage: createJSONStorage(() => localStorage),
+      storage: createSafeJSONStorage(),
       // The catalogue comes from the server on every request and `hydrated`
       // describes this tab; neither belongs in storage.
       partialize: (state) => ({ lines: state.lines, checkoutKey: state.checkoutKey }),

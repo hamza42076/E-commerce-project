@@ -1,7 +1,8 @@
 "use client";
 
 import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
+import { persist } from "zustand/middleware";
+import { createSafeJSONStorage } from "@/lib/storage/safe-json-storage";
 import type { UserRole } from "@/types";
 
 /**
@@ -71,7 +72,7 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: "smartshop-auth",
-      storage: createJSONStorage(() => localStorage),
+      storage: createSafeJSONStorage(),
       // `hydrated` describes this tab; there is nothing to store about it.
       partialize: (state) => ({ user: state.user, token: state.token }),
     },

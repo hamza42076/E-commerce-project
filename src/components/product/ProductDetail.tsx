@@ -5,9 +5,11 @@ import { ProductImage } from "@/components/ProductImage";
 import { Rating } from "@/components/Rating";
 import { QuantityStepper } from "@/components/QuantityStepper";
 import { AddToCartButton } from "@/components/AddToCartButton";
+import { WishlistButton } from "@/components/WishlistButton";
 import { ColorSwatches } from "./ColorSwatches";
 import { discountPercent, formatPrice } from "@/lib/format";
 import { defaultVariant, galleryFor, hasVariants } from "@/lib/products/variants";
+import { STORE_POLICIES } from "@/lib/store-policy";
 import { hasVideo, videoPoster } from "@/lib/products/video";
 import type { Product } from "@/types";
 
@@ -283,7 +285,13 @@ export function ProductDetail({ product }: { product: Product }) {
               color={variant.color}
               quantity={quantity}
               revealCart
-              className={soldOut ? "w-full" : "flex-1 py-3"}
+              className="flex-1 py-3"
+            />
+            <WishlistButton
+              productId={product.id}
+              productName={product.name}
+              label="Save"
+              className="rounded-lg px-4 py-3"
             />
           </div>
         </div>
@@ -294,8 +302,8 @@ export function ProductDetail({ product }: { product: Product }) {
           {[
             ...(product.material ? [{ label: "Material", value: product.material }] : []),
             ...(product.strapType ? [{ label: "Strap", value: product.strapType }] : []),
-            { label: "Delivery", value: "2-4 working days" },
-            { label: "Returns", value: "7 days, unopened" },
+            { label: "Delivery", value: STORE_POLICIES.shipping.deliveryWindow },
+            { label: "Returns", value: STORE_POLICIES.returns.wording },
             { label: "Payment", value: "Cash on delivery" },
           ].map((detail) => (
             <div key={detail.label} className="bg-surface p-4">

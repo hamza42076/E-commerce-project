@@ -5,6 +5,7 @@ import type { Category, Product, ProductQuery, ProductVariant } from "@/types";
 import { categoriesCollection, productsCollection, type ProductDoc } from "./mongo";
 import { shouldUseSeedData } from "./fallback";
 import { seedCategories, seedProducts } from "./seed-products";
+import { variantList } from "@/lib/products/variants";
 
 /**
  * Data access layer. Every product read and write in the app goes through this
@@ -147,6 +148,141 @@ export async function getProducts(query: ProductQuery = {}): Promise<Product[]> 
   const collection = await productsCollection();
   const docs = await collection.find(buildFilter(query)).sort(buildSort(query.sort)).toArray();
   return docs.map(toProduct);
+}
+
+export type AssistantProductSearch = {
+  keywords?: string[];
+  category?: string;
+  minPrice?: number;
+  maxPrice?: number;
+  color?: string;
+  inStockOnly?: boolean;
+  material?: string;
+};
+
+function normalized(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function matchesAssistantSearch(product: Product, query: AssistantProductSearch): boolean {
+  if (query.category && normalized(product.category) !== normalized(query.category)) return false;
+  if (query.minPrice !== undefined && product.price < query.minPrice) return false;
+  if (query.maxPrice !== undefined && product.price > query.maxPrice) return false;
+
+  const variants = variantList(product);
+  if (query.color && !variants.some((variant) => normalized(variant.color).includes(normalized(query.color!)))) {
+    return false;
+  }
+  if (query.inStockOnly && !variants.some((variant) => variant.stock > 0)) return false;
+  if (
+    query.material &&
+    !normalized(product.material ?? "").includes(normalized(query.material))
+  ) {
+    return false;
+  }
+
+  const searchable = normalized(
+    [
+      product.name,
+      product.slug,
+      product.category,
+      product.description,
+      product.material,
+      product.strapType,
+      ...variants.map((variant) => variant.color),
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+  return (query.keywords ?? []).every((keyword) => {
+    const word = normalized(keyword);
+    return searchable.includes(word) || (word.endsWith("s") && searchable.includes(word.slice(0, -1)));
+  });
+}
+
+/**
+ * Bounded assistant search. MongoDB applies structured filters and caps
+ * candidates before relevance ranking; only the selected products leave this
+ * repository.
+ */
+export async function searchProductsForAssistant(
+  query: AssistantProductSearch,
+  limit = 6,
+): Promise<Product[]> {
+  const boundedLimit = Math.min(6, Math.max(1, Math.floor(limit)));
+  if (shouldUseSeedData()) {
+    return seedProducts
+      .filter((product) => matchesAssistantSearch(product, query))
+      .sort(
+        (a, b) =>
+          Number(Boolean(b.featured)) - Number(Boolean(a.featured)) ||
+          a.price - b.price ||
+          a.id.localeCompare(b.id),
+      )
+      .slice(0, boundedLimit);
+  }
+
+  const filter: Filter<ProductDoc> = {};
+  const conditions: Filter<ProductDoc>[] = [];
+
+  if (query.category) filter.category = new RegExp(`^${escapeRegex(query.category)}$`, "i");
+  if (query.minPrice !== undefined || query.maxPrice !== undefined) {
+    filter.price = {
+      ...(query.minPrice !== undefined ? { $gte: query.minPrice } : {}),
+      ...(query.maxPrice !== undefined ? { $lte: query.maxPrice } : {}),
+    };
+  }
+  if (query.color) {
+    filter.$or = [{ "variants.color": new RegExp(escapeRegex(query.color), "i") }];
+  }
+  if (query.material) {
+    filter.material = new RegExp(escapeRegex(query.material), "i");
+  }
+  if (query.inStockOnly) {
+    conditions.push({
+      $or: [
+        { variants: { $elemMatch: { stock: { $gt: 0 } } } },
+        { variants: { $exists: false }, stock: { $gt: 0 } },
+        { variants: { $size: 0 }, stock: { $gt: 0 } },
+      ],
+    });
+  }
+
+  for (const keyword of query.keywords ?? []) {
+    const pattern = new RegExp(escapeRegex(keyword), "i");
+    conditions.push({
+      $or: [
+        { name: pattern },
+        { slug: pattern },
+        { description: pattern },
+        { category: pattern },
+        { material: pattern },
+        { strapType: pattern },
+        { "variants.color": pattern },
+      ],
+    });
+  }
+
+  if (conditions.length > 0) {
+    filter.$and = [...(filter.$and ?? []), ...conditions];
+  }
+  const collection = await productsCollection();
+  const candidates = await collection
+    .find(filter)
+    .sort({ featured: -1, _id: 1 })
+    .limit(100)
+    .toArray();
+
+  return candidates
+    .map(toProduct)
+    .filter((product) => matchesAssistantSearch(product, query))
+    .sort(
+      (a, b) =>
+        Number(Boolean(b.featured)) - Number(Boolean(a.featured)) ||
+        a.price - b.price ||
+        a.id.localeCompare(b.id),
+    )
+    .slice(0, boundedLimit);
 }
 
 export async function getFeaturedProducts(limit = 4): Promise<Product[]> {

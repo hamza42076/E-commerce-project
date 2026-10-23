@@ -77,6 +77,9 @@ try {
   await ensure("orders.userId + createdAt", () =>
     db.collection("orders").createIndex({ userId: 1, createdAt: -1 }),
   );
+  await ensure("wishlists.userId", () =>
+    db.collection("wishlists").createIndex({ userId: 1 }),
+  );
   const orders = db.collection("orders");
   const removedLegacyIndexes = await ensure(
     "orders.userId + idempotencyKey (unique, partial)",

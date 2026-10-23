@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ProductImage } from "./ProductImage";
 import { Rating } from "./Rating";
 import { AddToCartButton } from "./AddToCartButton";
+import { WishlistButton } from "./WishlistButton";
 import { discountPercent, formatPrice } from "@/lib/format";
 import { defaultVariant, isSoldOut, totalStock } from "@/lib/products/variants";
 import type { Product } from "@/types";
@@ -70,6 +71,12 @@ export function ProductCard({ product }: { product: Product }) {
           </span>
         )}
       </Link>
+
+      <WishlistButton
+        productId={product.id}
+        productName={product.name}
+        className="absolute right-3 top-3 z-10"
+      />
 
       <div className="flex flex-1 flex-col gap-2 p-4">
         <Link

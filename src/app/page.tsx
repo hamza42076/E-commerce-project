@@ -6,6 +6,7 @@ import {
   getCategories,
   getFeaturedProducts,
 } from "@/lib/db/products";
+import { STORE_POLICIES } from "@/lib/store-policy";
 
 // The root layout reads the session cookie, so every route renders per request.
 // That keeps prices, stock and the signed-in header always current.
@@ -22,7 +23,7 @@ const CATEGORY_PANELS: Record<string, string> = {
 const PROMISES = [
   {
     title: "Free delivery",
-    body: "On every order over Rs 5,000",
+    body: `On orders of at least Rs ${STORE_POLICIES.shipping.freeDeliveryThreshold.toLocaleString("en-PK")}`,
     icon: "M3 7h11v8H3zM14 10h4l3 3v2h-7z M7 18.5a1.6 1.6 0 100-3.2 1.6 1.6 0 000 3.2z M17.5 18.5a1.6 1.6 0 100-3.2 1.6 1.6 0 000 3.2z",
   },
   {
@@ -32,7 +33,7 @@ const PROMISES = [
   },
   {
     title: "7-day returns",
-    body: "Unopened, no questions asked",
+    body: STORE_POLICIES.returns.wording,
     icon: "M4 10a8 8 0 1114 5.3 M4 10V5 M4 10h5",
   },
   {

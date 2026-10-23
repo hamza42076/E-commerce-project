@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useAuthStore, type AuthUser } from "@/stores/auth";
 import { useCartStore } from "@/stores/cart";
+import { useWishlistStore } from "@/stores/wishlist";
 import type { Product } from "@/types";
 
 /**
@@ -18,9 +19,11 @@ import type { Product } from "@/types";
 export function StoreHydrator({
   catalogue,
   user,
+  wishlistProductIds,
 }: {
   catalogue: Product[];
   user: AuthUser | null;
+  wishlistProductIds: string[];
 }) {
   useEffect(() => {
     useCartStore.getState().setCatalogue(catalogue);
@@ -31,6 +34,10 @@ export function StoreHydrator({
     // Comparing by value: a fresh object arrives on every render, and the store
     // itself ignores a sync that changes nothing.
   }, [user?.email, user?.role, user?.name, user]);
+
+  useEffect(() => {
+    useWishlistStore.getState().syncFromServer(wishlistProductIds);
+  }, [wishlistProductIds]);
 
   return null;
 }

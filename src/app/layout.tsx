@@ -6,8 +6,10 @@ import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 import { CartDrawer } from "@/components/CartDrawer";
 import { Toaster } from "@/components/Toaster";
+import { Chatbot } from "@/components/Chatbot";
 import { getAllProducts } from "@/lib/db/products";
 import { getSession } from "@/lib/auth/session";
+import { getWishlistProductIds } from "@/lib/db/wishlist";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -31,6 +33,7 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   // Fetched here so the cart can turn stored product ids into full products.
   const [catalogue, session] = await Promise.all([getAllProducts(), getSession()]);
+  const wishlistProductIds = session ? await getWishlistProductIds(session.userId) : [];
 
   return (
     <html
@@ -47,12 +50,14 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
               ? { name: session.name, email: session.email, role: session.role }
               : null
           }
+          wishlistProductIds={wishlistProductIds}
         />
         <Navbar />
         <main className="flex-1">{children}</main>
         <Footer />
         <CartDrawer />
         <Toaster />
+        <Chatbot />
       </body>
     </html>
   );

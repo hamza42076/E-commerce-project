@@ -139,6 +139,13 @@ export type OrderDoc = {
   userId?: string;
 };
 
+export type WishlistDoc = {
+  _id: string;
+  userId: string;
+  productId: string;
+  createdAt: string;
+};
+
 export async function usersCollection(): Promise<Collection<UserDoc>> {
   const db = await getDb();
   return db.collection<UserDoc>("users");
@@ -189,6 +196,11 @@ export async function rateLimitsCollection(): Promise<Collection<RateLimitDoc>> 
 export async function ordersCollection(): Promise<Collection<OrderDoc>> {
   const db = await getDb();
   return db.collection<OrderDoc>("orders");
+}
+
+export async function wishlistsCollection(): Promise<Collection<WishlistDoc>> {
+  const db = await getDb();
+  return db.collection<WishlistDoc>("wishlists");
 }
 
 export async function categoriesCollection(): Promise<Collection<CategoryDoc>> {

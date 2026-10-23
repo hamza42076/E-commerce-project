@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useCartStore, useCartCount } from "@/stores/cart";
 import { useUIStore } from "@/stores/ui";
+import { useAuthUser } from "@/stores/auth";
+import { useWishlistStore } from "@/stores/wishlist";
 import { UserMenu } from "./UserMenu";
 
 // Category links are not listed here: with one category there is nothing to
@@ -17,6 +19,8 @@ const LINKS = [
 
 export function Navbar() {
   const itemCount = useCartCount();
+  const wishlistCount = useWishlistStore((state) => state.productIds.length);
+  const signedIn = useAuthUser();
   const ready = useCartStore((s) => s.hydrated);
   const openCart = useUIStore((s) => s.openCart);
   const pathname = usePathname();
@@ -42,6 +46,33 @@ export function Navbar() {
         }`}
       >
         <nav className="mx-auto flex h-16 max-w-6xl items-center gap-3 px-4">
+          <Link
+            href="/account/wishlist"
+            aria-label={`Wishlist${wishlistCount > 0 ? `, ${wishlistCount} saved` : ""}`}
+            className={`flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm transition hover:border-brand-400 hover:text-brand-600 ${
+              pathname.startsWith("/account/wishlist") ? "border-brand-400 text-brand-600" : ""
+            }`}
+          >
+            <span className="relative">
+              <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
+                <path
+                  d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21l7.8-7.5 1.1-1.1a5.5 5.5 0 0 0-.1-7.8Z"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              {signedIn && wishlistCount > 0 && (
+                <span className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-semibold tabular-nums text-white">
+                  {wishlistCount}
+                </span>
+              )}
+            </span>
+            <span className="hidden sm:inline">Wishlist</span>
+          </Link>
+
           <button
             type="button"
             onClick={() => setMenuOpen((open) => !open)}
