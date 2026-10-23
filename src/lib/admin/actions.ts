@@ -168,7 +168,7 @@ export async function updateOrderStatusAction(
   return {
     ok: true,
     message: result.emailQueued
-      ? `Order marked ${status}. The customer has been emailed.`
+      ? `Order marked ${status}. A status email was queued; delivery requires working SMTP settings.`
       : `Order was already ${status}.`,
   };
 }

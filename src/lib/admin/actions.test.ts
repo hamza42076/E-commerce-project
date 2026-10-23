@@ -24,8 +24,9 @@ describe("admin order Server Action authorization", () => {
       order: { id: "order-1" },
     });
 
-    await expect(updateOrderStatusAction("order-1", "confirmed")).resolves.toMatchObject({
+    await expect(updateOrderStatusAction("order-1", "confirmed")).resolves.toEqual({
       ok: true,
+      message: "Order marked confirmed. A status email was queued; delivery requires working SMTP settings.",
     });
     expect(changeOrderStatus).toHaveBeenCalledWith("order-1", "confirmed", "admin-1");
   });
