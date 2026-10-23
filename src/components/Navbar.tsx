@@ -45,11 +45,11 @@ export function Navbar() {
           scrolled ? "border-line shadow-sm" : "border-transparent"
         }`}
       >
-        <nav className="mx-auto flex h-16 max-w-6xl items-center gap-3 px-4">
+        <nav className="mx-auto flex h-16 max-w-6xl items-center gap-2 px-3 sm:gap-3 sm:px-4">
           <Link
             href="/account/wishlist"
             aria-label={`Wishlist${wishlistCount > 0 ? `, ${wishlistCount} saved` : ""}`}
-            className={`flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm transition hover:border-brand-400 hover:text-brand-600 ${
+            className={`flex shrink-0 items-center gap-2 rounded-lg border border-line px-2 py-2 text-sm transition hover:border-brand-400 hover:text-brand-600 sm:px-3 ${
               pathname.startsWith("/account/wishlist") ? "border-brand-400 text-brand-600" : ""
             }`}
           >
@@ -91,7 +91,7 @@ export function Navbar() {
             </svg>
           </button>
 
-          <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
+          <Link href="/" className="flex min-w-0 shrink items-center gap-1 font-semibold tracking-tight sm:gap-2">
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600 text-white">
               <svg viewBox="0 0 24 24" className="h-4.5 w-4.5" aria-hidden="true">
                 <path
@@ -104,7 +104,7 @@ export function Navbar() {
                 />
               </svg>
             </span>
-            <span className="text-lg">
+            <span className="truncate text-base sm:text-lg">
               Smart<span className="text-brand-600">Shop</span>
             </span>
           </Link>
@@ -133,7 +133,7 @@ export function Navbar() {
           <button
             type="button"
             onClick={openCart}
-            className="ml-auto flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm transition hover:border-brand-400 hover:text-brand-600"
+            className="ml-auto flex shrink-0 items-center gap-2 rounded-lg border border-line px-2 py-2 text-sm transition hover:border-brand-400 hover:text-brand-600 sm:px-3"
           >
             <span className="relative">
               <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">

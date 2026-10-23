@@ -174,12 +174,14 @@ export function Chatbot() {
     },
   ]);
   const nextId = useRef(1);
-  const messagesEnd = useRef<HTMLDivElement>(null);
+  const messagesContainer = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (!open) return;
-    messagesEnd.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    const container = messagesContainer.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
   }, [messages, pending, open]);
 
   useEffect(() => {
@@ -304,7 +306,11 @@ export function Chatbot() {
             </button>
           </header>
 
-          <div aria-live="polite" className="flex-1 space-y-3 overflow-y-auto p-4">
+          <div
+            ref={messagesContainer}
+            aria-live="polite"
+            className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-4"
+          >
             {messages.map((message) => (
               <div
                 key={message.id}
@@ -355,7 +361,6 @@ export function Chatbot() {
                 </div>
               </div>
             )}
-            <div ref={messagesEnd} />
           </div>
 
           {messages.length === 1 && (
