@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { updateOrderStatusAction } from "@/lib/admin/actions";
 import { useUIStore } from "@/stores/ui";
-import { allowedNextOrderStatuses } from "@/lib/orders/status";
+import { allowedNextOrderStatuses, ORDER_STATUSES } from "@/lib/orders/status";
 import type { OrderStatus } from "@/types";
 
 export function OrderStatusSelect({
@@ -19,6 +19,7 @@ export function OrderStatusSelect({
   const [pending, startTransition] = useTransition();
   // Shown immediately so the select does not snap back while the action runs.
   const [optimistic, setOptimistic] = useState(status);
+  const selectableStatuses = new Set([status, ...allowedNextOrderStatuses(status)]);
 
   function handleChange(next: OrderStatus) {
     const previous = optimistic;
@@ -47,8 +48,13 @@ export function OrderStatusSelect({
       aria-label="Order status"
       className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs capitalize outline-none transition focus:border-brand-500 disabled:opacity-60"
     >
-      {[status, ...allowedNextOrderStatuses(status)].map((option) => (
-        <option key={option} value={option} className="capitalize">
+      {ORDER_STATUSES.map((option) => (
+        <option
+          key={option}
+          value={option}
+          disabled={!selectableStatuses.has(option)}
+          className="capitalize"
+        >
           {option}
         </option>
       ))}

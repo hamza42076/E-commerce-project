@@ -6,6 +6,7 @@ import { OrderStatusSelect } from "@/components/admin/OrderStatusSelect";
 import { OrderItemImage } from "@/components/orders/OrderItemImage";
 import { getOrdersPage } from "@/lib/db/orders";
 import { formatPrice } from "@/lib/format";
+import { ORDER_STATUSES } from "@/lib/orders/status";
 import type { OrderStatus, PaymentStatus } from "@/types";
 
 export const metadata: Metadata = {
@@ -25,15 +26,6 @@ function formatDateTime(iso: string): string {
 function first(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
-
-const ORDER_STATUSES: OrderStatus[] = [
-  "pending",
-  "confirmed",
-  "processing",
-  "shipped",
-  "delivered",
-  "cancelled",
-];
 
 export default async function AdminOrdersPage({
   searchParams,

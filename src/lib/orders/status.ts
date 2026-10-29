@@ -1,5 +1,14 @@
 import type { OrderStatus } from "@/types";
 
+export const ORDER_STATUSES: OrderStatus[] = [
+  "pending",
+  "confirmed",
+  "processing",
+  "shipped",
+  "delivered",
+  "cancelled",
+];
+
 const NEXT_STATUSES: Record<OrderStatus, OrderStatus[]> = {
   pending: ["confirmed", "cancelled"],
   confirmed: ["processing", "cancelled"],

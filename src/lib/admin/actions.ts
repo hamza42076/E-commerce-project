@@ -9,19 +9,11 @@ import {
   type ProductInput,
 } from "@/lib/db/products";
 import { changeOrderStatus, collectCodPayment } from "@/lib/orders/update-status";
+import { ORDER_STATUSES } from "@/lib/orders/status";
 import { getSession } from "@/lib/auth/session";
 import type { OrderStatus } from "@/types";
 
 export type ActionResult = { ok: true; message: string } | { ok: false; message: string };
-
-const ORDER_STATUSES: OrderStatus[] = [
-  "pending",
-  "confirmed",
-  "processing",
-  "shipped",
-  "delivered",
-  "cancelled",
-];
 
 /**
  * Every action here re-checks the session role. The admin layout also guards the
